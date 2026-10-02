@@ -3,7 +3,13 @@
 Every round t (one feedback window) a chooser with traffic K_t receives a loss vector
 ℓ_t ∈ [0, R]^m and suffers K_t·⟨π_t, ℓ_t⟩.
 
-* ``Hedge``: π ∝ prior·exp(−η_t Σ_s K_s ℓ_s), anytime tuning η_t = c·sqrt(8 ln m / (R² Σ_s K_s²)).
+* ``Hedge``: exponential weights with anytime step η_t = c·sqrt(8 ln m / (R² Σ_s K_s²)) (greedy
+  form: log π ← log π − η_t K_t ℓ_t).
+
+Optional projection: if ``proj`` is set (a function mapping a stack of lists to lists), every iterate
+is projected after each update (and at restarts). In the simulator ``proj`` is the band squeeze, which
+is exactly the KL projection onto {σ: e^-θ π̄ ≤ σ ≤ e^θ π̄, Σσ = 1}, so the learners run as mirror
+descent over the band instead of drifting outside it.
 * ``FixedShare``: Hedge step with constant η = c·sqrt(8 ln m / (R² H K̄²)) then π ← (1−α)π + α/m,
   α = 1/H.
 * ``StronglyAdaptive``: geometric covering (GC) intervals; at level k a Fixed-Share Hedge base
@@ -40,6 +46,10 @@ class _Base:
         self.sK2 = np.zeros(C)
         self.n_upd = 0
         self.Kmax = np.full(C, 1e-12)
+        self.proj = None
+
+    def _p(self, P):
+        return P if self.proj is None else self.proj(P)
 
     def set_prior(self, prior):
         prior = np.asarray(prior, float)
@@ -57,22 +67,18 @@ class _Base:
 class Hedge(_Base):
     def __init__(self, prior, C, eta_scale=1.0, **_):
         super().__init__(prior, C, eta_scale)
-        self.L = np.zeros((C, self.m))
-        self.R = 1.0
+        self.lw = _log(self.prior)
 
-    def eta(self):
-        with np.errstate(divide="ignore"):
-            return self.eta_scale * np.sqrt(8 * self.lnm / (self.R ** 2 * self.sK2))
+    def eta(self, R=1.0):
+        return self.eta_scale * np.sqrt(8 * self.lnm / (R ** 2 * np.maximum(self.sK2, 1e-12)))
 
     def dist(self):
-        eta = np.where(self.sK2 > 0, self.eta(), 0.0)
-        L = self.L - self.L.min(axis=1, keepdims=True)
-        return _softmax_log(_log(self.prior) - eta[:, None] * L)
+        return _softmax_log(self.lw)
 
     def update(self, loss, K, R=1.0):
-        self.R = max(self.R, R) if self.n_upd else R
         self._track(K)
-        self.L += K[:, None] * loss
+        p = _softmax_log(self.lw - (self.eta(R) * K)[:, None] * loss)
+        self.lw = _log(self._p(p))
 
 
 class FixedShare(_Base):
@@ -93,7 +99,7 @@ class FixedShare(_Base):
         eta = self.eta(R)
         p = _softmax_log(self.lw - (eta * K)[:, None] * loss)
         u = self.support / self.support.sum(axis=1, keepdims=True)
-        self.lw = _log((1 - self.alpha) * p + self.alpha * u)
+        self.lw = _log(self._p((1 - self.alpha) * p + self.alpha * u))
 
 
 class StronglyAdaptive(_Base):
@@ -113,7 +119,7 @@ class StronglyAdaptive(_Base):
     def _restart(self, which):
         s = self.t
         for i in np.flatnonzero(which):
-            self.lw[i] = _log(self.prior)
+            self.lw[i] = _log(self._p(self.prior))
             self.wealth[i] = 1.0
             self.Sg[i] = 0.0
             self.n[i] = 0.0
@@ -152,7 +158,7 @@ class StronglyAdaptive(_Base):
             eta = self.eta_scale * np.sqrt(8 * self.lnm / (R ** 2 * L * K2))
             alpha = min(0.5, 1.0 / L)
             p = _softmax_log(self.lw[i] - (eta * K)[:, None] * loss)
-            self.lw[i] = _log((1 - alpha) * p + alpha * u)
+            self.lw[i] = _log(self._p((1 - alpha) * p + alpha * u))
         self.t += 1
         self._restart(((self.t - 1) % (2 ** self.levels)) == 0)
 
