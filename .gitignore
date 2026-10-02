@@ -4,3 +4,5 @@ __pycache__/
 regretor/data/raw/dbip-city-lite.csv.gz
 .pytest_cache/
 results/cache/
+regretor/data/raw/2026-10-02-12-00-00-consensus
+regretor/data/raw/onionoo_details.json
