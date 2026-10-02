@@ -64,8 +64,20 @@ class Sim:
             byz = env.byz_client[cid]
         return Msgs(cid, env.c_guard[cid], env.c_country[cid], env.c_dest[cid], byz, env.c_epoch[cid])
 
+    def _prop_tables(self):
+        env = self.env
+        f = lambda a1, o1, a2, o2: prop_latency_s(a1[:, None], o1[:, None], a2[None, :], o2[None, :], self.infl, self.hop_ms)
+        self._rr = f(env.lat, env.lon, env.lat, env.lon).astype(np.float32)
+        self._cr = f(env.cl_lat, env.cl_lon, env.lat, env.lon).astype(np.float32)
+        self._rd = f(env.lat, env.lon, env.dest_lat, env.dest_lon).astype(np.float32)
+
     def latency(self, m, g, mid, ex, qdelay):
         env = self.env
+        if env.n <= 4000:
+            if not hasattr(self, "_rr"):
+                self._prop_tables()
+            p = self._cr[m.loc, g] + self._rr[g, mid] + self._rr[mid, ex] + self._rd[ex, m.dest]
+            return p + qdelay[g] + qdelay[mid] + qdelay[ex]
         cl_lat, cl_lon = env.cl_lat[m.loc], env.cl_lon[m.loc]
         p = (prop_latency_s(cl_lat, cl_lon, env.lat[g], env.lon[g], self.infl, self.hop_ms)
              + prop_latency_s(env.lat[g], env.lon[g], env.lat[mid], env.lon[mid], self.infl, self.hop_ms)
@@ -88,6 +100,7 @@ class Sim:
                 env.c_guard[need] = sch.assign_guards(t, need)
             m = self._msgs(t)
             gl = np.bincount(m.guard, minlength=n).astype(float)
+            self.last_gl = gl
             mids, exits = sch.choose(t, m, gl)
             ml = np.bincount(mids, minlength=n)
             el = np.bincount(exits, minlength=n)
@@ -105,7 +118,7 @@ class Sim:
             qdelay = queue_delay_s(rho, self.q, c, self.base_s, env.delta, self.rho_cap)
             N = m.N
             F = social_cost(y, c)
-            _, _, Fs, _ = optimum(c, gl + env.bg, N, N, env.exit)
+            xm_s, xe_s, Fs, _ = optimum(c, gl + env.bg, N, N, env.exit)
             lat = self.latency(m, m.guard, mids, exits, qdelay) if lat_on or sch.needs_latency else None
             obs = Obs(t, rho, rho_read, qdelay, lat, c)
             sch.observe(t, obs, m, mids, exits)
@@ -119,6 +132,8 @@ class Sim:
             S["spread"][t] = fullness_spread(rho, c)
             hops = np.concatenate([m.guard, mids, exits])
             S["slowdown"][t] = per_hop_slowdown(rho[hops], self.rho_cap).mean()
+            pool_hops = np.concatenate([mids, exits])
+            S["slowdown_pool"][t] = per_hop_slowdown(rho[pool_hops], self.rho_cap).mean()
             S["mean_rho_used"][t] = np.minimum(rho[hops], self.rho_cap).mean()
             S["backlog"][t] = q_new.sum()
             S["drops"][t] = drops.sum()
@@ -130,6 +145,7 @@ class Sim:
                 S["att_exit"][t] = env.A[exits].mean()
                 S["att_load"][t] = (y[env.A]).sum() / y.sum()
                 S["compromise"][t] = np.mean(env.A[m.guard] & env.A[exits])
+                S["att_guard"][t] = env.A[m.guard].mean()
             if lat is not None:
                 S["lat_mean"][t] = lat.mean()
                 if lat_on:
@@ -141,6 +157,8 @@ class Sim:
             rec.mid_counts[h] += ml
             if t >= rec.snap_from:
                 rec.rho_sum += rho
+                rec.pool_sum += (xm_s + xe_s) > 0
+                rec.rho_hist += np.bincount(np.clip((rho * 100).astype(np.int64), 0, 399), weights=c, minlength=400)
                 rec.c_sum += c
                 rec.y_sum += y
                 rec.n_snap += 1
@@ -156,6 +174,9 @@ class Sim:
         out["scheme_stats"] = sch.final_stats()
         out["runtime_s"] = time.time() - t0
         out["n_relays"] = n
+        out["A"] = env.A
+        out["last_gl"] = self.last_gl
+        out["c0"] = env.c0
         out["synthetic"] = env.synthetic
         return out
 
@@ -182,7 +203,7 @@ class Sim:
         dest = np.where(local, env.local_site[country], r.choice(len(env.dest_remote_p), size=N, p=env.dest_remote_p))
         g = self.scheme.guards_for(country, r.random(N))
         m = Msgs(np.arange(N), g, country, dest, np.zeros(N, bool), np.zeros(N, np.int64))
-        mids, exits = self.scheme.choose(self.T, m, None, dry=True)
+        mids, exits = self.scheme.choose(self.T, m, self.last_gl, dry=True)
         n = env.n
         rc = rec.relay_cc
         chain = (rc[g] * 21 + rc[mids]) * 21 + rc[exits]

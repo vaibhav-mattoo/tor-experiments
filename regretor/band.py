@@ -27,7 +27,7 @@ def squeeze(pi, ref, theta, tol=1e-12, max_iter=500):
     return s[0] if np.ndim(pi) == 1 else s
 
 
-def kl_project(pi, ref, theta, tol=1e-13, max_iter=100):
+def kl_project(pi, ref, theta, tol=1e-11, max_iter=100):
     """KL projection of π onto the band {σ: e^-θ π̄ ≤ σ ≤ e^θ π̄, Σσ = 1}: σ = clip(λπ, lo, hi) with
     λ such that Σσ = 1. g(λ) = Σ_u clip(λπ_u, lo_u, hi_u) is monotone piecewise linear; solved per row
     by Newton steps safeguarded by bisection. Used as the learners' mirror-descent projection.
@@ -44,30 +44,26 @@ def kl_project(pi, ref, theta, tol=1e-13, max_iter=100):
     lo = np.broadcast_to(np.exp(-theta) * np.atleast_2d(ref), P.shape)
     hi = np.broadcast_to(np.exp(theta) * np.atleast_2d(ref), P.shape)
     C = P.shape[0]
+    if lo.shape[0] == 1 or np.ndim(ref) == 1:
+        lo, hi = lo[0], hi[0]  # (m,) vectors broadcast against (C, m): no per-row copies
     lam = np.ones(C)
     a = np.zeros(C)                # bracket: g(a) <= 1 <= g(b)
     b = np.full(C, np.inf)
-    act = np.arange(C)
     for _ in range(max_iter):
-        Pa, la, ha, l = P[act], lo[act], hi[act], lam[act]
-        x = l[:, None] * Pa
-        g = np.clip(x, la, ha).sum(axis=1)
-        free = (x > la) & (x < ha)
-        slope = (Pa * free).sum(axis=1)
+        x = lam[:, None] * P
+        g = np.clip(x, lo, hi).sum(axis=1)
+        slope = np.where((x > lo) & (x < hi), P, 0.0).sum(axis=1)
         err = g - 1.0
-        done = np.abs(err) <= tol
-        lo_side = err < 0
-        a[act] = np.where(lo_side, np.maximum(a[act], l), a[act])
-        b[act] = np.where(~lo_side, np.minimum(b[act], l), b[act])
-        with np.errstate(divide="ignore", invalid="ignore"):
-            newton = l - err / slope
-        aa, bb = a[act], b[act]
-        bis = np.where(np.isfinite(bb), 0.5 * (aa + bb), 2.0 * np.maximum(l, 1e-300))
-        ok = (slope > 0) & (newton > aa) & ((newton < bb) | ~np.isfinite(bb))
-        lam[act] = np.where(done, l, np.where(ok, newton, bis))
-        act = act[~done]
-        if act.size == 0:
+        if np.all(np.abs(err) <= tol):
             break
+        below = err < 0
+        a = np.where(below, np.maximum(a, lam), a)
+        b = np.where(~below, np.minimum(b, lam), b)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            newton = lam - err / slope
+        bis = np.where(np.isfinite(b), 0.5 * (a + b), 2.0 * np.maximum(lam, 1e-300))
+        ok = (slope > 0) & (newton > a) & ((newton < b) | ~np.isfinite(b))
+        lam = np.where(np.abs(err) <= tol, lam, np.where(ok, newton, bis))
     S = np.clip(lam[:, None] * P, lo, hi)
     S /= S.sum(axis=1, keepdims=True)
     return S[0] if single else S

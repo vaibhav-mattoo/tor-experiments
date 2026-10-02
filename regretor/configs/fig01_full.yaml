@@ -1,0 +1,8 @@
+figure: fig01_02
+scale: full
+rounds: 1080
+smooth: 30
+schemes: [regretor, vanilla, lag_oracle, oracle]
+overrides: {metrics: {mi: false}, regretor: {k_min: 3}}
+name: fig01_cost_ratio_static_fullnet
+name2: fig02_fullness_cdf_fullnet

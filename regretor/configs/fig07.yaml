@@ -1,0 +1,4 @@
+figure: fig07
+scale: scaled
+rounds: 4320
+H_list: [6, 18, 60, 180, 360, 1080, 2160]

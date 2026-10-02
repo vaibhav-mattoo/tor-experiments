@@ -21,7 +21,7 @@ DEFAULTS = {
     "directory": {"meas_noise": 0.15, "use_real_mismatch": True},
     "scheme": "regretor",
     "regretor": {"learner": "strongly_adaptive", "feedback": "real_plus_padding", "w": 6, "s": 20,
-                 "xi": 0.05, "theta": 0.5, "eta_scale": 1.0, "fs_horizon": 64, "k_min": 1,
+                 "xi": 0.05, "theta": 0.5, "eta_scale": 2.0, "fs_horizon": 64, "k_min": 1,
                  "reference": "hourly", "ref_r": 11, "n_sampled_refs": 8, "prior_mix": 0.02,
                  "dummy_size": 0.01, "location": "none", "theta_loc": 0.5, "lam": 20.0, "k_best": 4,
                  "time_noise": 0.1, "audit_rate": 0.0, "audit_tol": 0.3, "audit_windows": 10,

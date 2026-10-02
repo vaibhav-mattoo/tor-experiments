@@ -5,6 +5,7 @@ from scipy import stats
 LAT_BINS = 360
 LAT_LO, LAT_HI = -3.0, 2.5  # log10 seconds (backlogged paths can wait > 30 s)
 LAT_EDGES = np.logspace(LAT_LO, LAT_HI, LAT_BINS + 1)
+RHO_EDGES = np.linspace(0, 4, 401)
 
 
 # ----------------------------------------------------------------------------- basic quantities
@@ -125,15 +126,17 @@ class Recorder:
         T = cfg["time"]["rounds"]
         self.T = T
         self.series = {k: np.full(T, np.nan) for k in (
-            "F", "Fstar", "N", "spread", "slowdown", "backlog", "drops", "pad", "probe", "audit",
-            "att_mid", "att_exit", "att_load", "compromise", "rho_bar", "rho_max", "lat_mean",
+            "F", "Fstar", "N", "spread", "slowdown", "slowdown_pool", "backlog", "drops", "pad", "probe", "audit",
+            "att_mid", "att_exit", "att_guard", "att_load", "compromise", "rho_bar", "rho_max", "lat_mean",
             "mean_rho_used")}
         self.window = []  # dicts appended by schemes (clip mass, share ratios, ...)
         self.snap_from = int(cfg["metrics"]["snap_from"] * T)
         self.rho_sum = np.zeros(env.n)
+        self.pool_sum = np.zeros(env.n)  # rounds in which the optimum routes pool traffic via the relay
         self.c_sum = np.zeros(env.n)
         self.y_sum = np.zeros(env.n)
         self.pad_recv = np.zeros(env.n)
+        self.rho_hist = np.zeros(len(RHO_EDGES) - 1)  # capacity-weighted histogram of per-round fullness
         self.n_snap = 0
         self.lat_hist = np.zeros(LAT_BINS)
         # per-country latency: top 15 countries by users, then "other"
@@ -177,9 +180,11 @@ class Recorder:
         out["excess"] = s["F"] / s["Fstar"] - 1
         n = max(self.n_snap, 1)
         out["rho_snap"] = self.rho_sum / n
+        out["pool_frac"] = self.pool_sum / n
         out["c_snap"] = self.c_sum / n
         out["y_snap"] = self.y_sum / n
         out["pad_recv"] = self.pad_recv
+        out["rho_hist"] = self.rho_hist
         out["lat_hist"] = self.lat_hist
         out["lat_hist_cc"] = self.lat_hist_cc
         out["mi_exit"] = mutual_info_bits(self.mi_exit)

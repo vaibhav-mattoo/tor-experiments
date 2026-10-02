@@ -434,7 +434,7 @@ class RegreTor(Scheme):
             p.indep += np.bincount(obs_real.astype(int) * 16 + qb, minlength=32).reshape(2, 16)
         if p.log_rows is not None:
             rows = p.log_rows
-            p.log.append((p.pi[rows].copy(), true_loss.copy(), p.K[rows].copy()))
+            p.log.append((p.pi[rows].copy(), true_loss.copy(), p.K[rows].copy(), p.ref.copy()))
         p.learner.update(lhat, p.K.copy(), R)
         Kw = p.K.copy()
         p.publish()
@@ -460,6 +460,8 @@ class RegreTor(Scheme):
 
     def final_stats(self):
         out = dict(self.stats)
+        out["n_choosers"] = self.mid.C + self.ex.C
+        out["C_mid"], out["C_exit"] = self.mid.C, self.ex.C
         for p in self.pools:
             out[f"indep_{p.name}"] = p.indep
             if p.log_rows is not None:

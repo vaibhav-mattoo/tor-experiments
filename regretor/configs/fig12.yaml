@@ -1,0 +1,4 @@
+figure: [fig12, fig13]
+scale: scaled
+rounds: 2160
+loads: [0.5, 0.7, 0.85]

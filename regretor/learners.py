@@ -29,6 +29,14 @@ def _softmax_log(lw):
     return e / e.sum(axis=-1, keepdims=True)
 
 
+def _mw_step(P, z):
+    """Multiplicative-weights step P ∝ P·exp(−z), computed stably in place of log-domain softmax."""
+    z = z - z.min(axis=1, keepdims=True)
+    Q = P * np.exp(-z)
+    Q = np.maximum(Q, _TINY)
+    return Q / Q.sum(axis=1, keepdims=True)
+
+
 def _log(p):
     with np.errstate(divide="ignore"):
         return np.log(p)
@@ -67,18 +75,17 @@ class _Base:
 class Hedge(_Base):
     def __init__(self, prior, C, eta_scale=1.0, **_):
         super().__init__(prior, C, eta_scale)
-        self.lw = _log(self.prior)
+        self.P = self.prior / self.prior.sum(axis=1, keepdims=True)
 
     def eta(self, R=1.0):
         return self.eta_scale * np.sqrt(8 * self.lnm / (R ** 2 * np.maximum(self.sK2, 1e-12)))
 
     def dist(self):
-        return _softmax_log(self.lw)
+        return self.P.copy()
 
     def update(self, loss, K, R=1.0):
         self._track(K)
-        p = _softmax_log(self.lw - (self.eta(R) * K)[:, None] * loss)
-        self.lw = _log(self._p(p))
+        self.P = self._p(_mw_step(self.P, (self.eta(R) * K)[:, None] * loss))
 
 
 class FixedShare(_Base):
@@ -86,20 +93,19 @@ class FixedShare(_Base):
         super().__init__(prior, C, eta_scale)
         self.H = horizon
         self.alpha = 1.0 / horizon if alpha is None else alpha
-        self.lw = _log(self.prior)
+        self.P = self.prior / self.prior.sum(axis=1, keepdims=True)
 
     def dist(self):
-        return _softmax_log(self.lw)
+        return self.P.copy()
 
     def eta(self, R=1.0):
         return self.eta_scale * np.sqrt(8 * self.lnm / (R ** 2 * self.H * self._K2bar()))
 
     def update(self, loss, K, R=1.0):
         self._track(K)
-        eta = self.eta(R)
-        p = _softmax_log(self.lw - (eta * K)[:, None] * loss)
+        p = _mw_step(self.P, (self.eta(R) * K)[:, None] * loss)
         u = self.support / self.support.sum(axis=1, keepdims=True)
-        self.lw = _log(self._p((1 - self.alpha) * p + self.alpha * u))
+        self.P = self._p((1 - self.alpha) * p + self.alpha * u)
 
 
 class StronglyAdaptive(_Base):
@@ -108,7 +114,7 @@ class StronglyAdaptive(_Base):
         k_max = max(k_min, int(np.ceil(np.log2(max(2, horizon_windows)))))
         self.levels = np.arange(k_min, k_max + 1)
         nl = len(self.levels)
-        self.lw = np.empty((nl, C, self.m))
+        self.P = np.empty((nl, C, self.m))
         self.wealth = np.ones((nl, C))
         self.Sg = np.zeros((nl, C))
         self.n = np.zeros((nl, C))
@@ -119,7 +125,8 @@ class StronglyAdaptive(_Base):
     def _restart(self, which):
         s = self.t
         for i in np.flatnonzero(which):
-            self.lw[i] = _log(self._p(self.prior))
+            pr = self.prior / self.prior.sum(axis=1, keepdims=True)
+            self.P[i] = self._p(pr)
             self.wealth[i] = 1.0
             self.Sg[i] = 0.0
             self.n[i] = 0.0
@@ -133,7 +140,7 @@ class StronglyAdaptive(_Base):
         return np.where(tot > 0, v / np.where(tot > 0, tot, 1.0), fallback), w
 
     def base_dists(self):
-        return _softmax_log(self.lw)
+        return self.P
 
     def dist(self):
         pm, _ = self.meta_weights()
@@ -157,8 +164,8 @@ class StronglyAdaptive(_Base):
             L = float(2 ** k)
             eta = self.eta_scale * np.sqrt(8 * self.lnm / (R ** 2 * L * K2))
             alpha = min(0.5, 1.0 / L)
-            p = _softmax_log(self.lw[i] - (eta * K)[:, None] * loss)
-            self.lw[i] = _log(self._p((1 - alpha) * p + alpha * u))
+            p = _mw_step(self.P[i], (eta * K)[:, None] * loss)
+            self.P[i] = self._p((1 - alpha) * p + alpha * u)
         self.t += 1
         self._restart(((self.t - 1) % (2 ** self.levels)) == 0)
 

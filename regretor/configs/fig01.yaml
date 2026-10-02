@@ -1,0 +1,6 @@
+figure: fig01_02
+scale: scaled
+rounds: 2160
+schemes: [regretor, vanilla, lag_oracle, oracle, claps_cr, claps_ge, thesis, uniform]
+name: fig01_cost_ratio_static
+name2: fig02_fullness_cdf

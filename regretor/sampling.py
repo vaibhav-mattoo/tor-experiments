@@ -17,7 +17,10 @@ class StackedSampler:
 
     def sample(self, rows, u):
         rows = np.asarray(rows, np.int64)
-        idx = np.searchsorted(self.flat, rows + u, side="right")
+        q = rows + u
+        o = np.argsort(q, kind="stable")
+        idx = np.empty(len(q), np.int64)
+        idx[o] = np.searchsorted(self.flat, q[o], side="right")  # sorted queries: cache friendly
         col = idx - rows * self.m
         return np.minimum(col, self.m - 1)
 
