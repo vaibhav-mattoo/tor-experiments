@@ -246,9 +246,10 @@ class RegreTor(Scheme):
         R = self.rc["n_sampled_refs"]
         return (m.cid * 2654435761 + t // self.rc["w"]) % R
 
-    def choose(self, t, m, gl):
-        self.last_gl = gl
-        self.last_N = m.N
+    def choose(self, t, m, gl, dry=False):
+        if not dry:
+            self.last_gl = gl
+            self.last_N = m.N
         u = self.rng.random((2, m.N))
         refid = self._refid(m, t)
         rg = self.mid.row_of[m.guard]
@@ -263,8 +264,9 @@ class RegreTor(Scheme):
         else:
             mids = self.mid.sample(rg, u[0], refid)
             exits = self.ex.sample(self.ex.row_of[mids], u[1], refid)
-        self._account_real(self.mid, rg, self.mid.col_of[mids])
-        self._account_real(self.ex, self.ex.row_of[mids], self.ex.col_of[exits])
+        if not dry:
+            self._account_real(self.mid, rg, self.mid.col_of[mids])
+            self._account_real(self.ex, self.ex.row_of[mids], self.ex.col_of[exits])
         return mids, exits
 
     def _best_of_k(self, m, rg, refid):

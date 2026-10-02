@@ -49,7 +49,8 @@ class Sim:
         self.limit = qc["backlog_limit_rounds"]
         lc = cfg["latency"]
         self.infl, self.hop_ms = lc["inflation"], lc["per_hop_ms"]
-        self.extra_load = np.zeros(self.env.n)  # e.g. Byzantine client floods, filled by schemes/adversary
+        self.extra_load = np.zeros(self.env.n)
+        self.state_hook = None  # optional callable(dict) invoked every round (theory checks)  # e.g. Byzantine client floods, filled by schemes/adversary
 
     def _msgs(self, t):
         env = self.env
@@ -108,6 +109,9 @@ class Sim:
             lat = self.latency(m, m.guard, mids, exits, qdelay) if lat_on or sch.needs_latency else None
             obs = Obs(t, rho, rho_read, qdelay, lat, c)
             sch.observe(t, obs, m, mids, exits)
+            if self.state_hook is not None:
+                self.state_hook(dict(t=t, y=y, c=c, gl=gl, ml=ml, el=el, bg=env.bg, dummy=dummy, N=N, F=F, Fstar=Fs,
+                                     exit_mask=env.exit, scheme=sch))
             # ---- record
             S["F"][t] = F
             S["Fstar"][t] = Fs
@@ -147,11 +151,49 @@ class Sim:
                 print(f"t={t} F/F*={F / Fs:.4f} rho_bar={y.sum() / c.sum():.3f} N={N} "
                       f"elapsed={time.time() - t0:.1f}s", flush=True)
         out = rec.summary()
+        if mi_on:
+            out.update(self.leakage_probe())
         out["scheme_stats"] = sch.final_stats()
         out["runtime_s"] = time.time() - t0
         out["n_relays"] = n
         out["synthetic"] = env.synthetic
         return out
+
+
+    def leakage_probe(self, n_per_loc=None):
+        """I(client location; chain) from fresh i.i.d. probe clients drawn from the schemes' final state
+        (persistent guards make per-message samples dependent, which biases plug-in estimates)."""
+        from .env import rng_for
+        from .metrics import mutual_info_bits
+        env, rec = self.env, self.rec
+        r = rng_for(self.cfg["seed"], "metrics", 2)
+        n_per_loc = n_per_loc or self.cfg["metrics"].get("mi_probe", 20000)
+        L = rec.n_loc
+        # location clusters as in the recorder: top-15 countries + "other" (drawn by user share)
+        locs = []
+        for l in range(L):
+            members = np.flatnonzero(rec.cc_map == l)
+            p = env.cl_share[members] / env.cl_share[members].sum()
+            locs.append(r.choice(members, size=n_per_loc, p=p))
+        country = np.concatenate(locs)
+        cl = np.repeat(np.arange(L), n_per_loc)
+        N = len(country)
+        local = r.random(N) < env.p_local
+        dest = np.where(local, env.local_site[country], r.choice(len(env.dest_remote_p), size=N, p=env.dest_remote_p))
+        g = self.scheme.guards_for(country, r.random(N))
+        m = Msgs(np.arange(N), g, country, dest, np.zeros(N, bool), np.zeros(N, np.int64))
+        mids, exits = self.scheme.choose(self.T, m, None, dry=True)
+        n = env.n
+        rc = rec.relay_cc
+        chain = (rc[g] * 21 + rc[mids]) * 21 + rc[exits]
+        def mi(x, k):
+            """Miller–Madow plug-in minus the mean of 3 label-shuffled replicates (residual bias)."""
+            est = mutual_info_bits(np.bincount(cl * k + x, minlength=L * k).reshape(L, k))
+            sh = [mutual_info_bits(np.bincount(r.permutation(cl) * k + x, minlength=L * k).reshape(L, k))
+                  for _ in range(3)]
+            return max(0.0, est - float(np.mean(sh)))
+        return {"mi_guard": mi(g, n), "mi_middle": mi(mids, n), "mi_exit": mi(exits, n),
+                "mi_chain": mi(chain, 21 ** 3), "mi_probe_n": N}
 
 
 def run_config(cfg, verbose=False):

@@ -3,7 +3,7 @@ import numpy as np
 from scipy import stats
 
 LAT_BINS = 360
-LAT_LO, LAT_HI = -3.0, 1.5  # log10 seconds
+LAT_LO, LAT_HI = -3.0, 2.5  # log10 seconds (backlogged paths can wait > 30 s)
 LAT_EDGES = np.logspace(LAT_LO, LAT_HI, LAT_BINS + 1)
 
 

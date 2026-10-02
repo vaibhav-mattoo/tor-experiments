@@ -19,12 +19,15 @@ class Scheme:
 
     # guards: Tor's bandwidth-weighted, persistent per client (common random number u_guard)
     def assign_guards(self, t, idx):
-        return sample_vector(self.env.wg, self.env.c_uguard[idx])
+        return self.guards_for(self.env.c_country[idx], self.env.c_uguard[idx])
+
+    def guards_for(self, country, u):
+        return sample_vector(self.env.wg, u)
 
     def on_round_start(self, t):
         pass
 
-    def choose(self, t, m, guard_load):
+    def choose(self, t, m, guard_load, dry=False):
         raise NotImplementedError
 
     def dummy_load(self, t, m, mids, exits):
@@ -44,7 +47,7 @@ class Vanilla(Scheme):
     """B0: bandwidth-weighted with consensus weights x Tor position weights (hourly directory)."""
     name = "vanilla"
 
-    def choose(self, t, m, gl):
+    def choose(self, t, m, gl, dry=False):
         u = self.rng.random((2, m.N))
         return sample_vector(self.env.wm, u[0]), sample_vector(self.env.we, u[1])
 
@@ -53,7 +56,7 @@ class Uniform(Scheme):
     """B4: uniform over eligible relays."""
     name = "uniform"
 
-    def choose(self, t, m, gl):
+    def choose(self, t, m, gl, dry=False):
         env = self.env
         u = self.rng.random((2, m.N))
         return sample_vector(np.ones(env.n), u[0]), sample_vector(env.exit.astype(float), u[1])
@@ -63,7 +66,7 @@ class Oracle(Scheme):
     """B3: water-filling optimum with instantaneous true capacities."""
     name = "oracle"
 
-    def choose(self, t, m, gl):
+    def choose(self, t, m, gl, dry=False):
         env = self.env
         xm, xe, _, _ = optimum(env.c, gl + env.bg, m.N, m.N, env.exit)
         u = self.rng.random((2, m.N))
@@ -79,7 +82,7 @@ class LagOracle(Scheme):
         super().__init__(sim)
         self.pm = self.pe = None
 
-    def choose(self, t, m, gl):
+    def choose(self, t, m, gl, dry=False):
         env = self.env
         if self.pm is None or t % env.H == 0:
             a = gl + env.bg_frac * env.c0
