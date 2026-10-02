@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+regretor/data/raw/dbip-city-lite.csv.gz
+.pytest_cache/
+results/cache/
