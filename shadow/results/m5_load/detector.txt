@@ -1,0 +1,6 @@
+link-windows 75607
+next hop util>=0.7: 6094 link-windows; delay>0 fires on 1622; precision 0.647, recall 0.172
+next hop util>=0.9: 2256 link-windows; delay>0 fires on 1622; precision 0.399, recall 0.287
+pooled per next hop, util>=0.7: 160 of 3170; precision 0.394, recall 0.769
+pooled per next hop, util>=0.9: 70 of 3170; precision 0.221, recall 0.986
+among firing link-windows: median util_u 0.82, median util_v 0.53

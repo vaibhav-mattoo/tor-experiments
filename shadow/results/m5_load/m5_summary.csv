@@ -1,0 +1,27 @@
+key,value
+relays_with_logger,46
+event_options_after_setconf,"['{""TestingEnableCellStatsEvent"": ""1"", ""TestingEnableConnBwEvent"": ""1""}']"
+windows,8234
+cellstats_events_total,6493416
+channels_with_>=50_cells,4196
+channels_matched_to_a_connection(score<0.2),4023
+match_score_median(0=perfect),0.014449090153128643
+bytes_written/(514*cells)_median_over_matched,1.0086970585594028
+share_of_cells_on_matched_channels,0.9999723043605672
+matched_connections_to_relays,1561
+link_windows(after_converge),75607
+link_windows_with_cells,75607
+frac_link_windows_zero_delay,0.9785469599375719
+delay_ms_mean,13.794056509356562
+delay_ms_p50_p90_p99,"[0.0, 0.0, 9.021729494934124]"
+util_u_p50_p90_max,"[0.4684824276512746, 0.6632019589041096, 0.9594530914330626]"
+"delay_ms_mean|util_u in [0,0.1)","(0.001, 13248)"
+"delay_ms_mean|util_u in [0.1,0.3)","(0.032, 8660)"
+"delay_ms_mean|util_u in [0.3,0.5)","(0.032, 22372)"
+"delay_ms_mean|util_u in [0.5,0.7)","(0.105, 25233)"
+"delay_ms_mean|util_u in [0.7,0.9)","(36.932, 3838)"
+"delay_ms_mean|util_u in [0.9,10)","(397.842, 2256)"
+corr: per-link delay_ms vs util_u (next hop) (n=75607),spearman=0.178 pearson=0.094
+"corr: per-link delay_ms vs util_v (own load, control) (n=75607)",spearman=0.066 pearson=0.026
+corr: per-link bytes written to u vs util_u (n=75607),spearman=0.388 pearson=0.319
+corr: per-next-hop cell-weighted delay_ms vs util_u (n=3170),spearman=0.286 pearson=0.375
