@@ -10,6 +10,7 @@ GRID = {
     "s (probe_uniform)": ("regretor.s", [3, 10, 30, 100]),
     "xi (reading noise)": ("regretor.xi", [0.0, 0.05, 0.1, 0.2, 0.4]),
     "k_v (client multiplier)": ("clients.n", [0.25, 0.5, 1.0, 2.0]),
+    "dummy size (msg units)": ("regretor.dummy_size", [0.001, 0.01, 0.1, 1.0]),
 }
 
 
@@ -38,7 +39,7 @@ def fig29(spec, jobs=None):
                 keys.append((name, v))
     outs = run_all(cfgs, jobs)
     plt = style()
-    fig, axes = plt.subplots(2, len(GRID), figsize=(16, 5.4))
+    fig, axes = plt.subplots(2, len(GRID), figsize=(18, 5.4))
     rows = []
     for j, (name, (path, vals)) in enumerate(GRID.items()):
         ex, ent, mr = [], [], []

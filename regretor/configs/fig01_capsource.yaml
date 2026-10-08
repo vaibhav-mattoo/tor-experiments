@@ -1,0 +1,9 @@
+# Sensitivity of H1 to the capacity proxy: true capacity = consensus weight (no real mismatch;
+# only the hourly measurement noise remains).
+figure: fig01_02
+scale: scaled
+rounds: 2160
+schemes: [regretor, vanilla, lag_oracle, oracle, claps_cr]
+overrides: {network: {capacity_source: consensus}}
+name: fig01_cost_ratio_static_capacity_eq_consensus
+name2: fig02_fullness_cdf_capacity_eq_consensus

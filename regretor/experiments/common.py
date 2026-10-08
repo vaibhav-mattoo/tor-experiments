@@ -11,6 +11,7 @@ import pandas as pd
 
 from ..config import make_config, deep_update
 from ..metrics import mean_ci
+from ..sim import run_config  # imported eagerly so forked workers share one code snapshot
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RESULTS = os.path.join(ROOT, "results")
@@ -100,7 +101,6 @@ def _key(cfg):
 
 
 def _worker(cfg):
-    from ..sim import run_config
     path = os.path.join(CACHE, _key(cfg) + ".pkl")
     if os.path.exists(path):
         return path
