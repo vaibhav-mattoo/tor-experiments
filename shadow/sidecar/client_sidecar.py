@@ -188,6 +188,11 @@ class Sidecar:
         self.pending = {}      # circ id -> [stream ids waiting for it]
         self.active = None     # circ id currently taking new streams
         self.n_attach = self.n_build = self.n_fail = self.n_attach_err = self.n_extend_err = 0
+        self.cbt = None        # tor's circuit build timeout (s), from BUILDTIMEOUT_SET; tor does not apply it to
+                               # controller-built circuits, so the sidecar enforces it itself (M4 finding)
+        self.n_cbt_close = 0
+        self.cbt_tor = False   # True once tor itself reported a timeout
+        self.build_times = []  # own completed build times, for the sidecar's own CBT estimate
         self.tries = {}        # stream id -> placement attempts
         self.targets = {}      # stream id -> target (for re-placement)
 
@@ -216,8 +221,31 @@ class Sidecar:
                            "dedicated": last is not None}
         self.pending.setdefault(cid, [])
         self.n_build += 1
+        if self.cbt:
+            tm = threading.Timer(self.cbt, self.check_timeout, args=(cid,))
+            tm.daemon = True
+            tm.start()
         log("circ_req", circ=cid, path=path, reason=reason, chooser=self.chooser.name)
         return cid
+
+    def check_timeout(self, cid):
+        with self.lock:
+            c = self.circs.get(cid)
+            if c is None or c["built"]:
+                return
+            self.n_cbt_close += 1
+            log("cbt_close", circ=cid, after=self.cbt)
+            try:
+                self.ctl.close_circuit(cid)  # CIRC CLOSED re-places its streams and tops up spares
+            except Exception as ex:  # noqa: BLE001
+                log("close_error", circ=cid, err=str(ex)[:80])
+
+    def on_buildtimeout(self, ev):
+        if ev.timeout:
+            with self.lock:
+                self.cbt = ev.timeout / 1000.0
+                self.cbt_tor = True
+            log("cbt_set", timeout=self.cbt, set_type=str(ev.set_type))
 
     def _usable(self, cid, now):
         c = self.circs.get(cid)
@@ -290,7 +318,15 @@ class Sidecar:
             c = self.circs[ev.id]
             if ev.status == CircStatus.BUILT:
                 c["built"] = True
-                log("circ_built", circ=ev.id, dt=round(time.time() - c["t_req"], 3))
+                dt = time.time() - c["t_req"]
+                log("circ_built", circ=ev.id, dt=round(dt, 3))
+                # Tor learns its CBT only after ~100 circuits; behind the sidecar it sees too few, so
+                # estimate it the same way (80th percentile of build times, CircuitBuildTimeoutQuantile).
+                # Approximation: tor fits a Pareto distribution; here it is the empirical quantile.
+                self.build_times.append(dt)
+                if not self.cbt_tor and len(self.build_times) >= 10:
+                    bt = sorted(self.build_times[-1000:])
+                    self.cbt = bt[int(0.8 * (len(bt) - 1))]
                 for sid in self.pending.pop(ev.id, []):
                     self.attach(sid, ev.id)
                 self.pending[ev.id] = []
@@ -387,6 +423,7 @@ def main():
     sc = Sidecar(ctl, chooser, dirtiness, a.spare)
     ctl.add_event_listener(sc.on_circ, EventType.CIRC)
     ctl.add_event_listener(sc.on_stream, EventType.STREAM)
+    ctl.add_event_listener(sc.on_buildtimeout, EventType.BUILDTIMEOUT_SET)
     with sc.lock:
         sc.top_up()
     # Streams that arrived before we subscribed are still waiting for a controller.
@@ -401,6 +438,7 @@ def main():
         with sc.lock:
             log("stats", built=sc.n_build, failed=sc.n_fail, attached=sc.n_attach,
                 attach_err=sc.n_attach_err, extend_err=sc.n_extend_err, open=len(sc.circs),
+                cbt=sc.cbt, cbt_close=sc.n_cbt_close,
                 missing=len(sc.chooser.missing))
             # relays lacking a descriptor are skipped only until the next tick (tor fetches them soon)
             sc.chooser.missing.clear()

@@ -13,7 +13,7 @@ echo "== $(date -u +%FT%TZ) $NAME scale=$SCALE stop=$STOP converge=$CONV mod=$MO
 R=$(ls $S/relayinfo_staging_*.json); U=$(ls $S/userinfo_staging_*.json)
 if [ ! -d $OUT/gen ]; then
   tornettools --seed 1 generate $R $U $S/networkinfo_staging.gml $D/tmodel-ccs2018.github.io \
-    --network_scale $SCALE --prefix $OUT/gen --geoip_path $B/src/tor/src/config/geoip -m $NP || exit 2
+    --network_scale $SCALE ${GEN_EXTRA:-} --prefix $OUT/gen --geoip_path $B/src/tor/src/config/geoip -m $NP || exit 2
 fi
 cp -r $OUT/gen $LOCAL
 cfg=$LOCAL/shadow.config.yaml
