@@ -67,11 +67,54 @@ OptiMix.py:2018–2390) contains a hard-coded vanilla row and adjustments to mea
 on LARMix latency, +0.02 on LARMix FCP, ×1.5 on LAMP latency, RIPE columns derived from Nym values by
 constant factors). We therefore use only the routing functions and compare nothing against published numbers.
 
-MX_RESULTS_PLACEHOLDER
+**Results** (5 seeds; full tables `results/data/mx_summary.csv`; figures `mx01_frontier_link_*`, `mx02_frontier_e2e_*`,
+`mx03_fcp_*`). H(r) = mean entropy of the end-to-end exit distribution (max log₂W = 6.32 bits for Nym, 7.64 for RIPE).
+
+* **Without balancing, latency-greedy routing collapses under load.** OptiMix GWR without LBA and LAMP-SC
+  overload 18–31 % of nodes at ρ̄ = 0.7 (median end-to-end latency 31–62 s), on both datasets and both
+  capacity models. Their latency figures in the paper come from a model without capacity.
+* **Equal capacities, Nym, ρ̄ = 0.7.** The original scheme with a client-side latency tilt (θ_loc up to 4)
+  reaches only ≈ 49 ms link latency (H 6.03 bits, median 309 ms) and matches SSR+LBA where both exist
+  (≈ 50–75 ms, ±0.1 bit); it cannot reach the 23–47 ms region of GWR/GPR+LBA and LARMix.
+* **RIPE (200 nodes/layer).** GPR+LBA dominates the low-latency end (19.5 ms link, H 6.43 of 7.64); our
+  tilt variant only ties near 50 ms (H 7.59 vs 7.57) and is 30–40 ms worse in median e2e (learning is
+  slower with 200 successors per chooser; excess 6–9 % vs 4 %).
+* **OptiMix's unequal capacities (Ω), ρ̄ = 0.7.** Every baseline balances to *equal* load and overloads ≈ 28 %
+  of nodes (median 31 s); ours stays balanced (median 0.36–0.42 s on Nym). This is partly a strawman: the
+  capacity-aware LBA in §5 removes it when capacities are known exactly.
+* Corrupted-path fraction (15 % adversary) tracks entropy: at equal link latency ours is within ±0.003 of
+  the best baseline.
 
 ## 5. Latency-aware variants (separate package `latency_aware/`, RegreTor code untouched)
 
-LX_RESULTS_PLACEHOLDER
+Four variants were built in `latency_aware/` (imports the RegreTor code, modifies none of it) and compared on
+Nym at ρ̄ = 0.7 with OptiMix's LBA given (a) its own equal-load target, (b) true capacities, (c) capacity
+estimates with log-normal error σ = 0.5 (comparable to the consensus mismatch measured in §3). Full table:
+`results/data/lx_summary.csv`; figure `lx01_frontier_nym_rho0.7`.
+
+| variant | idea | outcome |
+|---|---|---|
+| ε-EXP3 (Hou, MobiHoc'24), no band | end-to-end bandit feedback from clients, education mode | on the frontier at 2 h (62.7 ms link, 333 ms median, H 6.20); drifts to 33 ms / 300 ms / **H 5.37** by 24 h as ε decays (no anonymity floor) |
+| ε-EXP3 + our band | same, lists projected into the band | **fails**: band bounds anonymity, not load; all nodes chase the same fast successors (excess 286 %, H 4.43) |
+| delay-LatBal | full-information loss = link latency + measured queueing delay + published downstream delay | stable (no overload) but dominated: similar H, 30–140 ms worse median than SSR+LBA |
+| latency + load prices | dual prices on relative load | oscillates (not in sweep) |
+| **public latency reference** (`latref`) | reference_v = OptiMix rule row (public, verifiable) for node v; learner only corrects load, inside [e^−θ, e^θ]·reference_v; capacities never used | best variant, below |
+
+**Public latency reference vs OptiMix (5 seeds):**
+
+| capacities | ours | OptiMix GWR/GPR/SSR+LBA with **true** capacities | with **noisy** capacities (σ = 0.5) |
+|---|---|---|---|
+| equal | GWR ref τ = 0.6, θ = 3: 26.1 ms link, 312 ms median, H 4.98 | GWR+LBA τ = 0.6: 27.8 ms, 282 ms, H 4.71 | 16–17 % nodes overloaded, median 16–26 s |
+| equal | GWR ref τ = 0.8, θ = 2: 44.1 / 309 / 5.86 | GPR+LBA τ = 0.8: 47.3 / 301 / 5.87 | same collapse |
+| unequal | GWR ref τ = 0.6, θ = 3: 26.6 / 365 / 4.88 | GWR+LBA τ = 0.6: 32.8 / 336 / 4.88 | 16–17 % overloaded, median 31 s |
+
+**Verdict.** Against an OptiMix that knows the true capacity of every mixnode, the public-reference
+variant is *on* the frontier: equal or up to +0.3 bits better at the same link latency, but 0–50 ms worse
+in median end-to-end latency, because learned balancing leaves 2–10 % excess where centrally computed LBA
+leaves 1.6 %. Against an OptiMix with realistic (noisy) capacity estimates it is clearly better: OptiMix
+overloads ≈ 16 % of nodes and its median latency is tens of seconds, while ours never needs capacities.
+Aggressive references (GWR τ ≤ 0.4) need θ ≥ 3 to rebalance; with θ ≤ 2 they overload — θ is the price
+paid in anonymity for latency.
 
 ## 6. Runtime and scale actually used
 
