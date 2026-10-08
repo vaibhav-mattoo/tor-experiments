@@ -42,7 +42,10 @@ tornettools plot $LOCAL --tor_metrics_path $(ls $S/tor_metrics_*.json) --prefix 
 # keep parsed data, plots, logs; archive raw host logs compactly
 mkdir -p $OUT/result
 cp -r $LOCAL/*.json* $LOCAL/plots $LOCAL/shadow.log $LOCAL/free.log $LOCAL/tornet.*.log $OUT/result/ 2>/dev/null
-cp -r $LOCAL/*.json.xz $OUT/result/ 2>/dev/null
+cp -r $LOCAL/*.json.xz $LOCAL/tornet.plot.data $OUT/result/ 2>/dev/null
+( cd $LOCAL/shadow.data/hosts && ls */python3*.stdout >/dev/null 2>&1 && \
+  tar -cJf $OUT/sidecar_logs.tar.xz */python3*.stdout */python3*.stderr && echo "sidecar logs archived" )
+python3 $B/repo/shadow/scripts/summarize.py $OUT/result $OUT/shadow.config.yaml $CONV $STOP $OUT/summary
 tar -C $LOCAL -cJf $OUT/shadow.data.tar.xz shadow.data 2>/dev/null &
 TP=$!
 [ -n "${EXTRA_POST:-}" ] && bash $EXTRA_POST $LOCAL $OUT

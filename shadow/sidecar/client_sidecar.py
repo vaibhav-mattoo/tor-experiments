@@ -19,12 +19,17 @@ import base64
 import bisect
 import json
 import random
+import re
 import sys
 import threading
 import time
 
 from stem import CircStatus, StreamStatus
 from stem.control import Controller, EventType
+
+
+EXIT_RE = re.compile(r"\.\$([0-9A-Fa-f]{40})\.exit(:\d+)?$")
+NODESC_RE = re.compile(r'No descriptor for "?\$?([0-9A-Fa-f]{40})')
 
 
 def log(kind, **kw):
@@ -66,6 +71,7 @@ class VanillaChooser:
 
     def __init__(self, relays, bww, rng):
         self.rng = rng
+        self.missing = set()  # relays tor has no descriptor for yet (it would refuse to extend to them)
         W = lambda k: bww.get(k, 10000) / 10000.0
         usable = [r for r in relays if {"Running", "Valid", "Fast"} <= r["flags"] and r["bw"] > 0]
         self.pos = {}
@@ -96,7 +102,7 @@ class VanillaChooser:
         cand, cum = self.pos[pos]
         for _ in range(100):
             fp = cand[bisect.bisect_right(cum, self.rng.random() * cum[-1])]
-            if fp not in exclude:
+            if fp not in exclude and fp not in self.missing:
                 return fp
         raise RuntimeError(f"no {pos} candidate outside {exclude}")
 
@@ -106,6 +112,12 @@ class VanillaChooser:
         g = self._draw("guard", {e})
         m = self._draw("middle", {e, g})
         return [g, m, e]
+
+    def path_to(self, last):
+        """Path whose last hop is fixed (tor's anonymized directory fetches name the relay)."""
+        g = self._draw("guard", {last})
+        m = self._draw("middle", {last, g})
+        return [g, m, last]
 
 
 # ---------------------------------------------------------------- circuit manager
@@ -118,17 +130,33 @@ class Sidecar:
         self.circs = {}        # circ id -> {"path", "t_req", "built", "first_use"}
         self.pending = {}      # circ id -> [stream ids waiting for it]
         self.active = None     # circ id currently taking new streams
-        self.n_attach = self.n_build = self.n_fail = self.n_attach_err = 0
+        self.n_attach = self.n_build = self.n_fail = self.n_attach_err = self.n_extend_err = 0
         self.tries = {}        # stream id -> placement attempts
+        self.targets = {}      # stream id -> target (for re-placement)
 
-    def build(self, reason):
-        path = self.chooser.path()
-        try:
-            cid = self.ctl.extend_circuit("0", path, await_build=False)
-        except Exception as ex:  # noqa: BLE001 - logged, caller retries
-            log("extend_error", err=str(ex), reason=reason)
+    def build(self, reason, last=None):
+        for _ in range(5):
+            try:
+                path = self.chooser.path() if last is None else self.chooser.path_to(last)
+            except RuntimeError as ex:  # every candidate excluded: forget missing relays, try again
+                log("draw_error", err=str(ex))
+                self.chooser.missing.clear()
+                continue
+            try:
+                cid = self.ctl.extend_circuit("0", path, await_build=False)
+                break
+            except Exception as ex:  # noqa: BLE001 - logged, retried with another path
+                self.n_extend_err += 1
+                m = NODESC_RE.search(str(ex))
+                log("extend_error", err=str(ex), reason=reason)
+                if m and m.group(1).upper() != last:
+                    self.chooser.missing.add(m.group(1).upper())
+                    continue
+                return None
+        else:
             return None
-        self.circs[cid] = {"path": path, "t_req": time.time(), "built": False, "first_use": None}
+        self.circs[cid] = {"path": path, "t_req": time.time(), "built": False, "first_use": None,
+                           "dedicated": last is not None}
         self.pending.setdefault(cid, [])
         self.n_build += 1
         log("circ_req", circ=cid, path=path, reason=reason, chooser=self.chooser.name)
@@ -142,7 +170,7 @@ class Sidecar:
 
     def _spares(self):
         return [cid for cid, c in self.circs.items() if c["first_use"] is None and cid != self.active
-                and not self.pending.get(cid)]
+                and not self.pending.get(cid) and not c["dedicated"]]
 
     def top_up(self):
         while len(self._spares()) < self.spare_target:
@@ -167,10 +195,18 @@ class Sidecar:
             if "not managed by controller" not in msg and "unknown stream" not in msg:
                 self.place(sid)
 
-    def place(self, sid):
+    def place(self, sid, target=None):
         n = self.tries[sid] = self.tries.get(sid, 0) + 1
         if n > 5:
             log("give_up", stream=sid)
+            return
+        if target is None:
+            target = self.targets.get(sid)
+        m = EXIT_RE.search(target or "")
+        if m:  # stream must leave from a specific relay: one-off circuit ending there
+            cid = self.build("dedicated", last=m.group(1).upper())
+            if cid is not None:
+                self.pending[cid].append(sid)
             return
         now = time.time()
         if self.active is not None and self._usable(self.active, now):
@@ -221,9 +257,11 @@ class Sidecar:
                 log("stream", stream=ev.id, status=str(ev.status), target=ev.target)
                 if ev.status == StreamStatus.DETACHED and ev.circ_id == self.active:
                     self.active = None
-                self.place(ev.id)
+                self.targets[ev.id] = ev.target
+                self.place(ev.id, ev.target)
             elif ev.status in (StreamStatus.CLOSED, StreamStatus.FAILED):
                 self.tries.pop(ev.id, None)
+                self.targets.pop(ev.id, None)
 
 
 def main():
@@ -274,13 +312,17 @@ def main():
     for st in ctl.get_streams():
         if st.status in (StreamStatus.NEW, StreamStatus.NEWRESOLVE) and st.circ_id in (None, "0"):
             with sc.lock:
-                sc.place(st.id)
+                sc.targets[st.id] = st.target
+                sc.place(st.id, st.target)
     tick = 0
     while True:
         time.sleep(a.stats_every)
         with sc.lock:
             log("stats", built=sc.n_build, failed=sc.n_fail, attached=sc.n_attach,
-                attach_err=sc.n_attach_err, open=len(sc.circs))
+                attach_err=sc.n_attach_err, extend_err=sc.n_extend_err, open=len(sc.circs),
+                missing=len(sc.chooser.missing))
+            # relays lacking a descriptor are skipped only until the next tick (tor fetches them soon)
+            sc.chooser.missing.clear()
         tick += 1
         if tick % 10:
             continue
@@ -289,7 +331,7 @@ def main():
             relays, bww = parse_md_consensus(ctl.get_info("dir/status-vote/current/consensus-microdesc"))
             if bww:
                 with sc.lock:
-                    sc.chooser = chooser = VanillaChooser(relays, bww, rng)
+                    sc.chooser = chooser = VanillaChooser(relays, bww, rng)  # retries missing relays
         except Exception as ex:  # noqa: BLE001
             log("refresh_error", err=str(ex))
 

@@ -13,7 +13,7 @@ step igraph
 cmake -S $S/igraph-0.10.17 -B $W/igraph -DCMAKE_INSTALL_PREFIX=$OPT -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON -DIGRAPH_ENABLE_TLS=ON -DIGRAPH_USE_INTERNAL_BLAS=ON -DIGRAPH_USE_INTERNAL_LAPACK=ON \
   -DIGRAPH_USE_INTERNAL_ARPACK=ON -DIGRAPH_USE_INTERNAL_GLPK=ON -DIGRAPH_USE_INTERNAL_GMP=ON -DIGRAPH_USE_INTERNAL_PLFIT=ON \
-  -DIGRAPH_GRAPHML_SUPPORT=OFF >$W/igraph.log 2>&1 && cmake --build $W/igraph -j$J >>$W/igraph.log 2>&1 \
+  -DIGRAPH_GRAPHML_SUPPORT=ON >$W/igraph.log 2>&1 && cmake --build $W/igraph -j$J >>$W/igraph.log 2>&1 \
   && cmake --install $W/igraph >>$W/igraph.log 2>&1 && echo OK || tail -40 $W/igraph.log
 
 step tgen
