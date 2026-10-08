@@ -27,6 +27,8 @@ from regretor.band import median_reference  # noqa: E402
 LOCK = threading.Lock()
 LISTS = {"guard": {}, "middle": {}}
 REF = {"guard": None, "middle": None}
+UTIL = {}                      # fp -> self-reported utilisation (S2)
+COUNTS = {}                    # request path -> count (list/reference downloads for S5)
 
 
 def recompute():
@@ -59,6 +61,13 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         r = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        path = urlparse(self.path).path
+        with LOCK:
+            COUNTS["POST " + path] = COUNTS.get("POST " + path, 0) + 1
+            if path == "/util":
+                UTIL[r["fp"]] = r["util"]
+        if path == "/util":
+            return self._send({"ok": True})
         with LOCK:
             LISTS[r["pos"]][r["fp"]] = {"succ": r["succ"], "p": r["p"], "t": time.time()}
             first = REF[r["pos"]] is None
@@ -70,6 +79,10 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         pos = parse_qs(u.query).get("pos", ["guard"])[0]
         with LOCK:
+            key = f"GET {u.path}?pos={pos}" if u.path != "/util" else "GET /util"
+            COUNTS[key] = COUNTS.get(key, 0) + 1
+            if u.path == "/util":
+                return self._send(UTIL)
             if u.path == "/lists":
                 return self._send(LISTS.get(pos, {}))
             if u.path == "/ref":
@@ -86,12 +99,15 @@ def main():
     srv = ThreadingHTTPServer(("0.0.0.0", a.port), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     print(json.dumps({"ev": "start", "port": a.port, "href": a.href, "t": time.time()}), flush=True)
+    last = time.time()
     while True:
-        time.sleep(a.href)
-        recompute()
+        time.sleep(60)
+        if time.time() - last >= a.href:
+            recompute()
+            last = time.time()
         with LOCK:
             print(json.dumps({"ev": "stats", "n_guard": len(LISTS["guard"]), "n_middle": len(LISTS["middle"]),
-                              "t": time.time()}), flush=True)
+                              "n_util": len(UTIL), "counts": COUNTS, "t": time.time()}), flush=True)
 
 
 if __name__ == "__main__":

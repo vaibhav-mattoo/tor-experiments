@@ -32,7 +32,7 @@ PY
 cp $cfg $OUT/shadow.config.yaml
 ulimit -n $(ulimit -Hn) 2>/dev/null; ulimit -a | grep -E "open files|processes"
 T0=$(date +%s)
-tornettools simulate -a "--parallelism=$NP --seed=666 --template-directory=shadow.data.template --progress=true" $LOCAL
+tornettools simulate -a "--parallelism=$NP --seed=${SHADOW_SEED:-666} --template-directory=shadow.data.template --progress=true" $LOCAL
 RC=$?; T1=$(date +%s)
 echo "== shadow rc=$RC wall=$((T1-T0))s"
 tail -5 $LOCAL/shadow.log

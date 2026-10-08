@@ -192,6 +192,7 @@ class Sidecar:
                                # controller-built circuits, so the sidecar enforces it itself (M4 finding)
         self.n_cbt_close = 0
         self.cbt_tor = False   # True once tor itself reported a timeout
+        self.own_cbt = True
         self.build_times = []  # own completed build times, for the sidecar's own CBT estimate
         self.tries = {}        # stream id -> placement attempts
         self.targets = {}      # stream id -> target (for re-placement)
@@ -324,7 +325,7 @@ class Sidecar:
                 # estimate it the same way (80th percentile of build times, CircuitBuildTimeoutQuantile).
                 # Approximation: tor fits a Pareto distribution; here it is the empirical quantile.
                 self.build_times.append(dt)
-                if not self.cbt_tor and len(self.build_times) >= 10:
+                if self.own_cbt and not self.cbt_tor and len(self.build_times) >= 10:
                     bt = sorted(self.build_times[-1000:])
                     self.cbt = bt[int(0.8 * (len(bt) - 1))]
                 for sid in self.pending.pop(ev.id, []):
@@ -365,7 +366,9 @@ def main():
     ap.add_argument("--listdir", default="http://listdir:8080")
     ap.add_argument("--spare", type=int, default=1, help="pre-built unused circuits to keep")
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--stats-every", type=float, default=60.0)
+    ap.add_argument("--stats-every", type=float, default=60.0, help="also the list/reference fetch interval")
+    ap.add_argument("--no-own-cbt", action="store_true",
+                    help="do not estimate a build timeout (use when torrc fixes CircuitBuildTimeout)")
     a = ap.parse_args()
 
     # tor starts a moment before the sidecar under Shadow; retry until its control port answers
@@ -421,6 +424,7 @@ def main():
         n_exit=len(chooser.pos["exit"][0]))
 
     sc = Sidecar(ctl, chooser, dirtiness, a.spare)
+    sc.own_cbt = not a.no_own_cbt
     ctl.add_event_listener(sc.on_circ, EventType.CIRC)
     ctl.add_event_listener(sc.on_stream, EventType.STREAM)
     ctl.add_event_listener(sc.on_buildtimeout, EventType.BUILDTIMEOUT_SET)
