@@ -24,7 +24,8 @@ import sys
 import threading
 import time
 
-from stem import CircStatus, StreamStatus
+sys.path.insert(0, "/work/hdd/bdpr/vmattoo2/tor-shadow/repo")
+from stem import CircStatus, StreamStatus  # noqa: E402
 from stem.control import Controller, EventType
 
 
@@ -118,6 +119,62 @@ class VanillaChooser:
         g = self._draw("guard", {last})
         m = self._draw("middle", {last, g})
         return [g, m, last]
+
+
+class RegretorChooser(VanillaChooser):
+    """Balance-RegreTor client side: guard by consensus weight (tornettools clients use no persistent
+    guard), middle from the guard's posted list, exit from the middle's posted list; each list is
+    squeezed into the band [e^-θ, e^θ]·π̄ around the reference with regretor.band.squeeze and sampled
+    with local randomness. Falls back to the vanilla draw when a list is not (yet) posted."""
+
+    name = "regretor"
+
+    def __init__(self, relays, bww, rng, theta):
+        super().__init__(relays, bww, rng)
+        self.theta = theta
+        self.lists = {"guard": {}, "middle": {}}
+        self.refs = {}
+        self.n_list = self.n_fallback = 0
+
+    def set_lists(self, lists, refs):
+        self.lists, self.refs = lists, refs
+
+    def _from_list(self, pos, owner, exclude):
+        import numpy as np
+        from regretor.band import squeeze
+        lst, ref = self.lists.get(pos, {}).get(owner), self.refs.get(pos)
+        if not lst or not ref:
+            return None
+        succ = ref["succ"]
+        pmap = dict(zip(lst["succ"], lst["p"]))
+        pi = np.array([pmap.get(u, 0.0) for u in succ])
+        r = np.asarray(ref["p"], float)
+        if pi.sum() <= 0 or r.sum() <= 0:
+            return None
+        sig = squeeze(pi / pi.sum(), r / r.sum(), self.theta)
+        for i, u in enumerate(succ):
+            if u in exclude or u in self.missing:
+                sig[i] = 0.0
+        if sig.sum() <= 0:
+            return None
+        sig = sig / sig.sum()
+        return succ[int(np.searchsorted(np.cumsum(sig), self.rng.random() * sig.sum(), side="right").clip(0, len(succ) - 1))]
+
+    def path(self):
+        g = self._draw("guard", set())
+        m = self._from_list("guard", g, {g})
+        if m is None:
+            self.n_fallback += 1
+            m = self._draw("middle", {g})
+        else:
+            self.n_list += 1
+        e = self._from_list("middle", m, {g, m})
+        if e is None:
+            self.n_fallback += 1
+            e = self._draw("exit", {g, m})
+        else:
+            self.n_list += 1
+        return [g, m, e]
 
 
 # ---------------------------------------------------------------- circuit manager
@@ -267,7 +324,9 @@ class Sidecar:
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=9051)
-    ap.add_argument("--chooser", default="vanilla", choices=["vanilla"])
+    ap.add_argument("--chooser", default="vanilla", choices=["vanilla", "regretor"])
+    ap.add_argument("--theta", type=float, default=1.0)
+    ap.add_argument("--listdir", default="http://listdir:8080")
     ap.add_argument("--spare", type=int, default=1, help="pre-built unused circuits to keep")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--stats-every", type=float, default=60.0)
@@ -298,7 +357,29 @@ def main():
             pass
         time.sleep(5)
     rng = random.Random(a.seed)
-    chooser = VanillaChooser(relays, bww, rng)
+
+    def make_chooser(relays, bww):
+        if a.chooser == "regretor":
+            return RegretorChooser(relays, bww, rng, a.theta)
+        return VanillaChooser(relays, bww, rng)
+
+    def fetch_lists(ch):
+        if a.chooser != "regretor":
+            return
+        import urllib.request
+        lists, refs = {}, {}
+        for pos in ("guard", "middle"):
+            try:
+                with urllib.request.urlopen(f"{a.listdir}/lists?pos={pos}", timeout=5) as r:
+                    lists[pos] = json.loads(r.read())
+                with urllib.request.urlopen(f"{a.listdir}/ref?pos={pos}", timeout=5) as r:
+                    refs[pos] = json.loads(r.read())
+            except Exception as ex:  # noqa: BLE001 - list host not ready yet: vanilla fallback
+                log("list_fetch_error", pos=pos, err=str(ex)[:80])
+        ch.set_lists(lists, refs)
+
+    chooser = make_chooser(relays, bww)
+    fetch_lists(chooser)
     log("start", relays=len(relays), dirtiness=dirtiness, chooser=a.chooser,
         n_guard=len(chooser.pos["guard"][0]), n_middle=len(chooser.pos["middle"][0]),
         n_exit=len(chooser.pos["exit"][0]))
@@ -323,6 +404,9 @@ def main():
                 missing=len(sc.chooser.missing))
             # relays lacking a descriptor are skipped only until the next tick (tor fetches them soon)
             sc.chooser.missing.clear()
+            if a.chooser == "regretor":
+                log("regretor", from_list=sc.chooser.n_list, fallback=sc.chooser.n_fallback)
+        fetch_lists(sc.chooser)
         tick += 1
         if tick % 10:
             continue
@@ -330,8 +414,11 @@ def main():
         try:
             relays, bww = parse_md_consensus(ctl.get_info("dir/status-vote/current/consensus-microdesc"))
             if bww:
+                new = make_chooser(relays, bww)
+                if a.chooser == "regretor":
+                    new.set_lists(sc.chooser.lists, sc.chooser.refs)
                 with sc.lock:
-                    sc.chooser = chooser = VanillaChooser(relays, bww, rng)  # retries missing relays
+                    sc.chooser = chooser = new
         except Exception as ex:  # noqa: BLE001
             log("refresh_error", err=str(ex))
 

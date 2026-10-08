@@ -63,6 +63,24 @@ Node-hours = elapsed × billing / 128000 (see DELTA_NOTES.md). Updated after eac
   * Extracting the descriptor tarball onto `/work/hdd` (Lustre HDD) took over an hour without finishing,
     so the fetch job was cancelled and extraction moved to node-local NVMe (48 s).
 
+* **Smoke tests (scale 0.001: 9 relays + 3 authorities, 100 markov + 100 perf clients, 10 servers;
+  10 simulated min, 5 min excluded):** all pass after fixes, ~4–13 min wall each on 16 CPUs.
+  * M3 vanilla (job 22745218): Shadow rc=0, 228 s wall; parse and plot clean; perf-client TTFB
+    median 0.41 s, error rate 0/400.
+    The first try (22745115) failed: every tgen aborted with "GraphML support is disabled",
+    because I had built igraph with `-DIGRAPH_GRAPHML_SUPPORT=OFF`. Rebuilt with GraphML
+    (`scripts/m1_fix_igraph.sh`).
+  * M4 sidecar (22745489): TTFB median 0.39 s, error rate 0/400. First try (22745352) exposed a
+    sidecar bug: tor's anonymized directory fetches arrive as streams to `IP.$FP.exit:port` and need a
+    circuit ending at that relay. Attaching them to random circuits failed, and clients then lacked
+    microdescriptors ("No descriptor for …" on EXTENDCIRCUIT). Fixed: dedicated circuits for `.exit`
+    targets, and relays without a descriptor are skipped for one 60 s tick.
+  * M5 relay logger (22745490): CELL_STATS and CONN_BW are emitted under Shadow (85,002 CELL_STATS events).
+    Found: CELL_STATS `InboundConn/OutboundConn` are *channel* IDs, while ORCONN/CONN_BW use
+    *connection* IDs, and the control port gives no mapping between them. Channels are now matched to
+    connections by their byte series (see M5).
+  * M6 Balance-RegreTor (22745612, 20 simulated min): runs end to end (details under M6).
+
 ## Problems / deviations
 
 * No GitHub credential is on Delta (`~/.git-credentials` missing, no SSH key, no `gh`), so pushes to
