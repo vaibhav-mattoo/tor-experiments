@@ -1,0 +1,6 @@
+# Reduced H11: only the dummy-size sensitivity (the full grid in fig29.yaml was cut for time).
+figure: fig29
+scale: scaled
+rounds: 2160
+params: ["dummy size (msg units)"]
+name: fig29_sensitivity_dummy_size

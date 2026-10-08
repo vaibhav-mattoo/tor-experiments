@@ -208,7 +208,9 @@ class Env:
             self.drop_until[start] = t + ex[start] * cc["drop_mean_rounds"]
             mult[self.drop_until > t] = cc["drop_mult"]
         elif self.proc == "switch":
-            if t > 0 and t % int(cc["H_change"]) == 0:
+            # optional phase offset so switches do not coincide with the hourly directory refresh
+            ph = int(cc.get("switch_phase", 0))
+            if t > ph and (t - ph) % int(cc["H_change"]) == 0:
                 sel = u < cc["switch_frac"]
                 z = self._rng_cap.normal(0.0, cc["switch_sigma"], self.n)
                 self.switch_mult[sel] = np.clip(np.exp(z[sel]), 0.15, 4.0)
@@ -228,7 +230,8 @@ class Env:
         # adversarial capacity behaviour
         k = self.adv_cfg["kind"]
         if k == "bait_switch":
-            ph = t % (self.adv_cfg["D1"] + self.adv_cfg["D2"])
+            # optional phase offset so stalls do not start exactly at an hourly consensus measurement
+            ph = (t - int(self.adv_cfg.get("phase", 0))) % (self.adv_cfg["D1"] + self.adv_cfg["D2"])
             if ph >= self.adv_cfg["D1"]:
                 mult[self.A] *= self.adv_cfg["low_mult"]
         elif k == "on_off":

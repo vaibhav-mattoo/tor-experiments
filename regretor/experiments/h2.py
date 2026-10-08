@@ -69,8 +69,11 @@ def _switch_runs(spec, jobs, H_list, variants):
     for H in H_list:
         for name, sc, o in variants:
             for s in seeds:
-                cfgs.append(build(scale, {"time": {"rounds": T}, "metrics": {"mi": False},
-                                          "capacity": {"process": "switch", "H_change": H}}, o, seed=s, scheme=sc))
+                cap = {"process": "switch", "H_change": H}
+                if "switch_phase" in spec:
+                    cap["switch_phase"] = spec["switch_phase"]
+                cfgs.append(build(scale, {"time": {"rounds": T}, "metrics": {"mi": False}, "capacity": cap}, o,
+                                  seed=s, scheme=sc))
                 keys.append((H, name, s))
     outs = run_all(cfgs, jobs)
     return keys, outs

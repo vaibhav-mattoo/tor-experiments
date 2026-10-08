@@ -8,3 +8,5 @@ regretor/data/raw/2026-10-02-12-00-00-consensus
 regretor/data/raw/onionoo_details.json
 results/cache/
 results_phase1*.log
+regretor/baselines/optimix/upstream/
+regretor/baselines/optimix/.venv38/

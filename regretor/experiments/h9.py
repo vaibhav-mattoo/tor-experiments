@@ -64,6 +64,8 @@ def fig22(spec, jobs=None):
     seeds = spec.get("seeds", REPORT_SEEDS)
     T = spec.get("rounds", 4320)
     adv = {"kind": "bait_switch", "frac": 0.05, "D1": 720, "D2": 360, "low_mult": 0.05}
+    if "phase" in spec:
+        adv["phase"] = spec["phase"]
     variants = [("ours (hourly ref)", "regretor", {}),
                 ("ours (ref every 10 min)", "regretor", {"time": {"H_ref": 60}}),
                 ("ours (sampled ref, r=11)", "regretor", {"regretor": {"reference": "sampled", "ref_r": 11}}),
@@ -106,7 +108,7 @@ def fig22(spec, jobs=None):
     a1.axhline(np.exp(-th) * cap_share, color="#e34948", ls=":", lw=1)
     a1.text(0, np.exp(-th) * cap_share, " ≈ floor e^{−θ}π̄(A) if π̄ ∝ capacity", fontsize=7, va="top", color="#e34948")
     D1, D2 = 720, 360
-    for st in range(D1, T, D1 + D2):
+    for st in range(D1 + spec.get("phase", 0), T, D1 + D2):
         a1.axvspan(st * 10 / 3600, min(T, st + D2) * 10 / 3600, color="#e34948", alpha=0.07, lw=0)
     a1.set_xlabel("time (h) (shaded: attacker stalls at 5% capacity)")
     a1.set_ylabel("attacker share of middle+exit selections")

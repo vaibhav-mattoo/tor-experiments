@@ -1,3 +1,6 @@
+# Stalls are offset by 97 rounds from the hourly consensus measurement (phase 0 is vanilla's best case:
+# every stall would start exactly when the directory re-measures).
 figure: fig22
 scale: scaled
 rounds: 3240
+phase: 97
