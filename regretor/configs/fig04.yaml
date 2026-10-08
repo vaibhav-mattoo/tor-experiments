@@ -1,4 +1,7 @@
+# Switches are offset by 97 rounds so they never coincide with the hourly consensus/reference refresh
+# (with phase 0, hourly and 6-hourly switches land exactly on refreshes and lagged schemes see no lag).
 figure: [fig04, fig05]
 scale: scaled
 rounds: 4320
 H_list: [6, 60, 360, 2160]
+switch_phase: 97
