@@ -230,7 +230,8 @@ class Env:
         # adversarial capacity behaviour
         k = self.adv_cfg["kind"]
         if k == "bait_switch":
-            ph = t % (self.adv_cfg["D1"] + self.adv_cfg["D2"])
+            # optional phase offset so stalls do not start exactly at an hourly consensus measurement
+            ph = (t - int(self.adv_cfg.get("phase", 0))) % (self.adv_cfg["D1"] + self.adv_cfg["D2"])
             if ph >= self.adv_cfg["D1"]:
                 mult[self.A] *= self.adv_cfg["low_mult"]
         elif k == "on_off":
