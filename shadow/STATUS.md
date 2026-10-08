@@ -30,7 +30,10 @@ billing = max(1000 × CPUs, 512 × GB) (one full CPU node = 128000). Computed fr
 | m4_cbt | 22746779 | M4 sidecar with CBT estimate, 1 %, 60 min | 2:28:39 | 0.634 |
 | **M0–M6 total** | | | | **3.23 of 12** |
 | s1_cal | 22747864 | S1 calibration, 0.5 %, 15 min | 1:08:47 | 0.293 |
-| s4 array | 22749097_[0-5] | S4 paired runs | see S section | see S section |
+| s4 array | 22749097_[0-5] | S4 paired runs, 6 × 0.5 %, 20 min | 1:35–1:58 each | 2.58 |
+| s4b array | 22749676_{0,2,4} | backup vanilla runs, cancelled unused | 1:11:50 each | 0.90 |
+| **S task total** | | | | **3.77 of 15** |
+| **Session total** | | | | **~7.0** |
 
 ## Versions (M1)
 
@@ -233,7 +236,67 @@ the real network's weight-vs-capacity mismatch is present here. Vanilla is there
 be near-optimal in this network, and a null result would not be explained by the network construction.
 
 ### S4/S5 results
-S4_RESULTS_PLACEHOLDER
+All six runs completed (job array 22749097; Shadow rc 0 in every run; Shadow wall 5,209–6,717 s for
+1,200 simulated s; peak RSS 26–33 GB). The vanilla runs simulated more slowly (5,621–6,717 s) than the
+Balance-RegreTor runs (5,209–5,635 s), consistent with more queueing. Metrics are over simulated minutes
+10–20 (`LO=600 HI=1200`), perf clients only (1,000 transfers per run), relays measured against
+RelayBandwidthRate. Backup vanilla runs (22749676, 18 min) were started as insurance and cancelled
+unused when the originals finished. Files: `results/s5_paired/{per_run.csv, paired.csv,
+network_mismatch.txt, cdf_ttfb_all.png, cdf_ttlb_1MiB.png, cdf_util.png}`.
+
+**Utilisation achieved (accepted second value, f = 0.60):** vanilla mean 0.432 (seeds 0.466 / 0.416 /
+0.416), capacity-weighted mean 0.574, 4–7 % of relays above 0.9. That is inside the 40–80 % acceptance
+band but below the 50–70 % target for the plain mean.
+
+Per seed (vanilla → Balance-RegreTor), and mean ± sd over 3 seeds with the paired difference
+(regretor − vanilla; min/max over seeds):
+
+| metric | seed 1 | seed 2 | seed 3 | vanilla mean ± sd | regretor mean ± sd | paired diff (min, max) | rel. |
+|---|---|---|---|---|---|---|---|
+| util spread (cap-weighted std) | 0.273 → 0.229 | 0.265 → 0.199 | 0.272 → 0.244 | 0.270 ± 0.004 | 0.224 ± 0.023 | −0.046 (−0.067, −0.027) | −17 % |
+| util cap-weighted mean | 0.581 → 0.615 | 0.577 → 0.608 | 0.565 → 0.621 | 0.574 ± 0.009 | 0.615 ± 0.007 | +0.040 (+0.031, +0.056) | +7 % |
+| util plain mean | 0.466 → 0.510 | 0.416 → 0.533 | 0.416 → 0.476 | 0.432 ± 0.029 | 0.506 ± 0.029 | +0.074 (+0.044, +0.117) | +17 % |
+| frac relays util > 0.9 | 0.043 → 0.087 | 0.065 → 0.065 | 0.043 → 0.087 | 0.051 ± 0.013 | 0.080 ± 0.013 | +0.029 (0, +0.043) | |
+| TTFB 50 KiB p50 (s) | 0.416 → 0.460 | 0.433 → 0.478 | 0.426 → 0.459 | 0.425 ± 0.008 | 0.465 ± 0.011 | +0.040 (+0.033, +0.045) | +10 % |
+| TTFB 1 MiB p99 (s) | 0.974 → 0.757 | 0.965 → 0.825 | 1.342 → 1.000 | 1.094 ± 0.215 | 0.860 ± 0.126 | −0.233 (−0.342, −0.140) | −21 % |
+| TTFB 5 MiB p99 (s) | 0.965 → 0.722 | 1.217 → 0.775 | 1.171 → 0.808 | 1.118 ± 0.134 | 0.768 ± 0.044 | −0.349 (−0.441, −0.244) | −31 % |
+| TTLB 50 KiB p50 (s) | 0.938 → 1.021 | 0.964 → 1.058 | 0.972 → 0.994 | 0.958 ± 0.018 | 1.024 ± 0.032 | +0.067 (+0.023, +0.095) | +7 % |
+| TTLB 50 KiB p99 (s) | 1.968 → 2.230 | 3.653 → 2.129 | 2.209 → 2.038 | 2.610 ± 0.911 | 2.133 ± 0.096 | −0.478 (−1.524, +0.262) | −12 % |
+| TTLB 1 MiB p50 (s) | 2.437 → 2.494 | 2.340 → 2.590 | 2.213 → 2.424 | 2.330 ± 0.112 | 2.503 ± 0.083 | +0.173 (+0.057, +0.250) | +7 % |
+| TTLB 1 MiB p90 (s) | 3.827 → 3.550 | 3.934 → 3.592 | 4.313 → 3.893 | 4.025 ± 0.255 | 3.679 ± 0.187 | −0.346 (−0.420, −0.277) | −9 % |
+| TTLB 1 MiB p99 (s) | 20.21 → 4.23 | 7.67 → 6.86 | 6.78 → 5.61 | 11.55 ± 7.51 | 5.56 ± 1.32 | −5.99 (−15.98, −0.82) | −36 % |
+| TTLB 5 MiB p50 (s) | 4.604 → 4.532 | 4.249 → 5.092 | 4.150 → 5.128 | 4.335 ± 0.239 | 4.917 ± 0.334 | +0.583 (−0.072, +0.978) | +14 % |
+| TTLB 5 MiB p90 (s) | 14.12 → 9.17 | 13.47 → 8.61 | 11.20 → 8.34 | 12.93 ± 1.53 | 8.71 ± 0.42 | −4.22 (−4.95, −2.86) | −32 % |
+| TTLB 5 MiB p99 (s) | 91.7 → 12.6 | 29.5 → 18.3 | 21.8 → 10.4 | 47.7 ± 38.3 | 13.8 ± 4.0 | −33.9 (−79.1, −11.2) | −59 % |
+| goodput p50 (Mbit/s) | 10.01 → 9.21 | 9.71 → 9.35 | 10.53 → 9.04 | 10.09 ± 0.42 | 9.20 ± 0.16 | −0.88 (−1.49, −0.36) | −9 % |
+| error rate | 0 → 0 | 0.001 → 0 | 0 → 0 | 0.0003 | 0 | | |
+
+(All TTFB/TTLB percentiles for every size are in `paired.csv`.) Every row except two has the same sign in
+all three seeds; the exceptions are TTLB 50 KiB p99 and TTLB 5 MiB p50 (one seed reverses each), and the fraction of relays above 0.9, which is unchanged in seed 2.
+
+* **Padding** (counted, not injected): 0.0047 % (vanilla arm, counted the same way) and 0.0041 %
+  (Balance-RegreTor) of all cells relays sent. Negligible at this load.
+* **List host traffic per 20-minute run** (Balance-RegreTor): 11,339 list downloads and 12,916 reference
+  downloads by clients and relays, 1,587 list posts, 1,390 utilisation posts and 1,389 utilisation
+  downloads by relays. Vanilla arm: 0 list downloads, 1,588 reference downloads (relays only); relay
+  posts identical.
+* **Learner movement**: posted lists moved far from the consensus prior, with each list's largest entry a
+  median 7.8× the prior (p90 10.6×) and its smallest a median 0.25× (seed 1, Balance-RegreTor; the vanilla
+  arm's relays learn the same way, 5.7× / 0.25×, but clients ignore it). This is beyond e^θ = 1.65
+  because the band is relative to the reference, and the reference (median of posted lists) is refreshed
+  every 5 min and ratchets with the lists.
+
+**What this says about H1/H6.** Within this short, high-load, 0.5 % Shadow network, Balance-RegreTor
+directionally **supports** the simulator's claims. Utilisation spread falls by 17 % (all 3 seeds) and
+the latency tail shrinks a lot: 5 MiB TTLB p90 −32 % and p99 −59 %, 1 MiB TTLB p99 −36 %, TTFB p99
+−21 % to −31 %, all seeds agreeing. The network has a real consensus-weight vs capacity mismatch
+(std 0.46), which is the mechanism the simulator credits. It also shows costs the simulator's H1/H6
+framing does not highlight: medians get worse (TTFB p50 +10 %, TTLB p50 +7 % to +14 %, goodput p50 −9 %),
+and the share of relays above 90 % utilisation rises (5 % → 8 %) even as the spread falls. It **cannot
+speak to** absolute magnitudes or to steady state: only 3 seeds, 10 measured minutes after a 10-minute
+warm-up (the reference refreshed only ~4 times), a self-reported utilisation signal with no audits,
+padding counted but not sent, a sidecar path without conflux (absolute numbers are not plain-tor
+numbers), and θ/w taken from the prompt without tuning on these seeds.
 
 ## Next steps
 1. Add a GitHub credential on Delta and push `shadow-delta`.

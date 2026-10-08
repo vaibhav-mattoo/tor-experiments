@@ -13,6 +13,6 @@
 B=/work/hdd/bdpr/vmattoo2/tor-shadow
 i=${SLURM_ARRAY_TASK_ID:?}
 ARMS=(vanilla regretor); export ARM=${ARMS[$((i % 2))]}; export SSEED=$((i / 2 + 1)); export SHADOW_SEED=$SSEED
-NAME=s4_${ARM}_s${SSEED}
+NAME=${RUNPFX:-s4}_${ARM}_s${SSEED}
 mkdir -p $B/runs/$NAME && [ -d $B/runs/$NAME/gen ] || cp -r $B/runs/s1_cal/gen $B/runs/$NAME/
-bash $B/repo/shadow/scripts/run_tornet.sh $NAME 0.005 1200 600 $B/repo/shadow/scripts/mod_s.sh
+bash $B/repo/shadow/scripts/run_tornet.sh $NAME 0.005 ${STOP:-1200} 600 $B/repo/shadow/scripts/mod_s.sh

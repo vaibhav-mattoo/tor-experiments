@@ -1,0 +1,4 @@
+relays: 46
+consensus-weight share / configured-rate share, capacity-weighted: mean 1.000, std 0.457
+unweighted p10/p50/p90: 0.268 / 0.795 / 1.255
+min 0.020, max 2.504
