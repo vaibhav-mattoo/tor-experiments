@@ -137,3 +137,25 @@ paid in anonymity for latency.
 3. Make audits mandatory (a ≈ 0.2) and use one reading per successor per window (closes the fig20 leak).
 4. Before any further claims against vanilla, measure the real consensus-vs-capacity mismatch (the
    Shadow prompt `regretor/DELTA_AGENT_PROMPT_2.md` asks for it).
+
+## 8. Shadow validation (real tor, NCSA Delta; details in `shadow/STATUS.md`)
+
+Paired comparison, both arms through the same stem sidecar: 0.5 % network (46 relays), high load (mean
+utilisation 0.43, capacity-weighted 0.57), 20 simulated minutes measured over minutes 10–20, seeds 1–3.
+Balance-RegreTor used the strongly adaptive learner, θ = 0.5, w = 30 s, a 5-min median reference and
+self-reported relay utilisation as the reading (no audits; padding counted, not sent).
+
+| metric | vanilla | Balance-RegreTor | change (all 3 seeds same sign?) |
+|---|---|---|---|
+| utilisation spread (capacity-weighted std) | 0.270 | 0.224 | −17 % (yes) |
+| 5 MiB download p90 / p99 | 12.9 / 47.7 s | 8.7 / 13.8 s | −32 % / −59 % (yes) |
+| 1 MiB download p99 | 11.6 s | 5.6 s | −36 % (yes) |
+| TTFB p99 (5 MiB) | 1.12 s | 0.77 s | −31 % (yes) |
+| TTFB p50 (50 KiB) | 0.425 s | 0.465 s | +10 % (yes) |
+| goodput p50 | 10.1 Mbit/s | 9.2 Mbit/s | −9 % (yes) |
+| relays above 90 % utilisation | 5 % | 8 % | worse (2 of 3 seeds) |
+
+This directionally supports H1/H6 (balance and tail latency) in real tor code, in a network whose consensus
+weights mis-estimate capacity strongly (share ratio 0.02–2.5), and shows the same median cost as the
+simulator and mixnet runs. It cannot settle them: 3 short seeds, ~4 reference refreshes, self-reported
+readings, no conflux on the sidecar path. Next steps are in `NEXT_ITERATION.md`.
