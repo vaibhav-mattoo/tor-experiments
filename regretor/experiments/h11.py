@@ -30,8 +30,9 @@ def fig29(spec, jobs=None):
     T = spec.get("rounds", 2160)
     base_n = build(scale, seed=0)["clients"]["n"]
     env = {"capacity": {"process": "switch", "H_change": 360}}
+    grid = {k: v for k, v in GRID.items() if k in spec.get("params", GRID)}
     cfgs, keys = [], []
-    for name, (path, vals) in GRID.items():
+    for name, (path, vals) in grid.items():
         for v in vals:
             for s in seeds:
                 cfgs.append(build(scale, {"time": {"rounds": T}, "metrics": {"mi": False, "latency": False}}, env,
@@ -39,9 +40,9 @@ def fig29(spec, jobs=None):
                 keys.append((name, v))
     outs = run_all(cfgs, jobs)
     plt = style()
-    fig, axes = plt.subplots(2, len(GRID), figsize=(18, 5.4))
+    fig, axes = plt.subplots(2, len(grid), figsize=(3 * len(grid) + 1.5, 5.4), squeeze=False)
     rows = []
-    for j, (name, (path, vals)) in enumerate(GRID.items()):
+    for j, (name, (path, vals)) in enumerate(grid.items()):
         ex, ent, mr = [], [], []
         for v in vals:
             sel = [o for k, o in zip(keys, outs) if k == (name, v)]
