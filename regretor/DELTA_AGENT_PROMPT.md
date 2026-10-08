@@ -15,7 +15,7 @@ conditions below.
 
 ## Context
 
-* Repository: `https://github.com/vaibhav-mattoo/tor-experiments.git`, branch `regretor-sim`. It
+* Repository: `https://github.com/vaibhav-mattoo/tor-experiments.git`, branch `master`. It
   contains a round-based simulator (`regretor/`) for a Tor load-balancing scheme called
   **Balance-RegreTor**, its baselines (vanilla Tor, CLAPS, a latency-Exp3 "thesis RegreTor"), results
   (`results/`), and a design for validating the simulator in Shadow: **read
@@ -35,7 +35,7 @@ conditions below.
 
 ## Ground rules
 
-1. **Git:** clone the repo, create branch `shadow-delta` from `regretor-sim`, and commit and push
+1. **Git:** clone the repo, create branch `shadow-delta` from `master`, and commit and push
    only to `shadow-delta`. Never push to `master`, `main` or `regretor-sim`. Never print or commit
    credentials or tokens.
 2. **Delta etiquette:** the login nodes are only for editing, git, small downloads and `sbatch`. Run
