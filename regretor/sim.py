@@ -40,6 +40,8 @@ class Sim:
         self.cfg = cfg
         self.env = Env(cfg)
         self.T = cfg["time"]["rounds"]
+        lc = cfg["latency"]
+        self.infl, self.hop_ms = lc["inflation"], lc["per_hop_ms"]
         self.scheme = make_scheme(cfg["scheme"], self)
         self.rec = Recorder(self.env, cfg)
         self.q = np.zeros(self.env.n)

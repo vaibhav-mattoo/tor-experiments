@@ -78,7 +78,7 @@ def save(fig, name, df, synthetic=False, note=None):
     if synthetic:
         fig.text(0.99, 0.01, "SYNTHETIC DATA", ha="right", va="bottom", color="#e34948", fontsize=9, weight="bold")
     if note:
-        fig.text(0.01, 0.005, note, ha="left", va="bottom", color="#52514e", fontsize=6.5)
+        fig.text(0.01, -0.06, note, ha="left", va="top", color="#52514e", fontsize=6.5, wrap=True)
     fig.savefig(os.path.join(FIG_DIR, f"{name}.png"), bbox_inches="tight")
     fig.savefig(os.path.join(FIG_DIR, f"{name}.pdf"), bbox_inches="tight")
     df.to_csv(os.path.join(DATA_DIR, f"{name}.csv"), index=False)

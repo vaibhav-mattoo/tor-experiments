@@ -129,7 +129,7 @@ def fig22(spec, jobs=None):
     a2.set_xlabel("audit rate a")
     a2.set_ylabel("cumulative damage (excess·hours)")
     a2.set_title("Damage vs audit rate")
-    a3.set_xticks(range(len(variants)), [v[0].replace("ours ", "ours\n") for v in variants], fontsize=6.5)
+    a3.set_xticks(range(len(variants)), [v[0] for v in variants], fontsize=6.5, rotation=30, ha="right")
     a3.set_ylabel("cumulative damage (excess·hours)")
     a3.set_title("Damage vs reference refresh")
     a3.grid(axis="x", visible=False)
