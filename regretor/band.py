@@ -90,3 +90,66 @@ def sampled_reference(lists, r, rng, n_refs=1):
         idx = rng.choice(C, size=min(r, C), replace=False)
         out[i] = median_reference(lists[idx])
     return out
+
+
+# ----------------------------------------------------------------------------- general per-successor bounds
+def band_bounds(ref, theta_down, theta_up, min_share=0.0):
+    """Bounds of the (possibly asymmetric) band used by regretor_v2:
+    ℓ_u = e^-θ_down·π̄(u) and h_u = min(1, e^θ_up·π̄(u)) for π̄(u) ≥ min_share; ℓ_u = 0 below the
+    cutoff, so no floor traffic is forced onto relays whose reference share is negligible."""
+    ref = np.asarray(ref, float)
+    lo = np.exp(-theta_down) * ref
+    lo = np.where(ref < min_share, 0.0, lo)
+    hi = np.minimum(1.0, np.exp(theta_up) * ref)
+    return lo, hi
+
+
+def kl_project_bounds(pi, lo, hi, tol=1e-11, max_iter=100):
+    """KL projection onto {σ: lo ≤ σ ≤ hi, Σσ = 1}: σ = clip(λπ, lo, hi), λ by safeguarded Newton.
+    Same algorithm as ``kl_project`` with arbitrary per-successor bounds (1-D or per-row 2-D)."""
+    pi = np.asarray(pi, float)
+    single = pi.ndim == 1
+    P = np.atleast_2d(pi)
+    P = P / np.maximum(P.sum(axis=1, keepdims=True), 1e-300)
+    lo = np.asarray(lo, float)
+    hi = np.asarray(hi, float)
+    P = P + 1e-12 * np.atleast_2d(hi)  # zero entries: limit of π + ε·h (keeps the problem feasible)
+    C = P.shape[0]
+    lam = np.ones(C)
+    a = np.zeros(C)
+    b = np.full(C, np.inf)
+    for _ in range(max_iter):
+        x = lam[:, None] * P
+        g = np.clip(x, lo, hi).sum(axis=1)
+        slope = np.where((x > lo) & (x < hi), P, 0.0).sum(axis=1)
+        err = g - 1.0
+        if np.all(np.abs(err) <= tol):
+            break
+        below = err < 0
+        a = np.where(below, np.maximum(a, lam), a)
+        b = np.where(~below, np.minimum(b, lam), b)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            newton = lam - err / slope
+        bis = np.where(np.isfinite(b), 0.5 * (a + b), 2.0 * np.maximum(lam, 1e-300))
+        ok = (slope > 0) & (newton > a) & ((newton < b) | ~np.isfinite(b))
+        lam = np.where(np.abs(err) <= tol, lam, np.where(ok, newton, bis))
+    S = np.clip(lam[:, None] * P, lo, hi)
+    S /= S.sum(axis=1, keepdims=True)
+    return S[0] if single else S
+
+
+def squeeze_bounds(pi, lo, hi, tol=1e-12, max_iter=500):
+    """Client-side clip-and-renormalise until stable, with arbitrary per-successor bounds."""
+    pi = np.asarray(pi, float)
+    s = np.atleast_2d(normalize(np.clip(pi, lo, hi))).copy()
+    lo2 = np.broadcast_to(np.atleast_2d(lo), s.shape)
+    hi2 = np.broadcast_to(np.atleast_2d(hi), s.shape)
+    active = np.arange(s.shape[0])
+    for _ in range(max_iter):
+        new = normalize(np.clip(s[active], lo2[active], hi2[active]))
+        delta = np.abs(new - s[active]).max(axis=1)
+        s[active] = new
+        active = active[delta > tol]
+        if active.size == 0:
+            break
+    return s[0] if np.ndim(pi) == 1 else s

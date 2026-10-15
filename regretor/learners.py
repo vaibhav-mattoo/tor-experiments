@@ -89,10 +89,11 @@ class Hedge(_Base):
 
 
 class FixedShare(_Base):
-    def __init__(self, prior, C, eta_scale=1.0, horizon=64, alpha=None, **_):
+    def __init__(self, prior, C, eta_scale=1.0, horizon=64, alpha=None, mix_to_prior=False, **_):
         super().__init__(prior, C, eta_scale)
         self.H = horizon
         self.alpha = 1.0 / horizon if alpha is None else alpha
+        self.mix_to_prior = mix_to_prior  # regretor_v2: share mass toward π̄ (set via set_prior) not uniform
         self.P = self.prior / self.prior.sum(axis=1, keepdims=True)
 
     def dist(self):
@@ -104,7 +105,10 @@ class FixedShare(_Base):
     def update(self, loss, K, R=1.0):
         self._track(K)
         p = _mw_step(self.P, (self.eta(R) * K)[:, None] * loss)
-        u = self.support / self.support.sum(axis=1, keepdims=True)
+        if self.mix_to_prior:
+            u = self.prior / self.prior.sum(axis=1, keepdims=True)
+        else:
+            u = self.support / self.support.sum(axis=1, keepdims=True)
         self.P = self._p((1 - self.alpha) * p + self.alpha * u)
 
 

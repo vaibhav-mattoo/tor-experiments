@@ -97,8 +97,9 @@ class LatMixSim(MixSim):
             if pol == "latref":
                 ref = OR.routing_matrix(lc["ref_rule"], self.Ls[li], lc["ref_tau"])
                 p["ref"] = ref
-                p["learner"] = make_learner("strongly_adaptive", ref, W, eta_scale=lc["eta_scale"],
-                                            horizon_windows=T_win, k_min=1)
+                p["learner"] = make_learner(lc.get("learner", "strongly_adaptive"), ref, W, eta_scale=lc["eta_scale"],
+                                            horizon_windows=T_win, k_min=1, horizon=lc.get("fs_horizon", 64),
+                                            mix_to_prior=lc.get("fs_mix_to_ref", False))
                 p["learner"].proj = (lambda P, p=p: kl_project(P, p["ref"], lc["theta"]))
             elif pol in ("latbal", "latprice"):
                 p["price"] = np.zeros((W, W))
@@ -302,7 +303,8 @@ class LatMixSim(MixSim):
             "band": lc["band"], "capacity": c["capacity"], "dataset": c["dataset"], "seed": c["seed"],
             "rho_bar": c["rho_bar"],
             "lat_link_ms": 1000 * acc["lat_link"] / acc["n"], "lat_e2e_ms": 1000 * acc["lat_e2e"] / acc["n"],
-            "lat_p50_ms": 1000 * _hq(acc["lat_hist"], 0.5), "lat_p99_ms": 1000 * _hq(acc["lat_hist"], 0.99),
+            "lat_p50_ms": 1000 * _hq(acc["lat_hist"], 0.5), "lat_p90_ms": 1000 * _hq(acc["lat_hist"], 0.9),
+            "lat_p99_ms": 1000 * _hq(acc["lat_hist"], 0.99),
             "H_r": h_r(R12m, R23m), "H_max": float(np.log2(W)), "excess": acc["F"] / acc["Fs"] - 1,
             "frac_overloaded": float((rho_mean[1:] > 1).mean()),
             "FCP": fcp_greedy(R12m, R23m, c["adv_budget"], np.random.default_rng([c["seed"], 404]), c["adv_draws"]),

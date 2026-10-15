@@ -8,7 +8,8 @@ online learner, updating once per window of w rounds.
 """
 import numpy as np
 
-from ..band import clip_mass, kl_project, median_reference, normalize, squeeze
+from ..band import (band_bounds, clip_mass, kl_project, kl_project_bounds, median_reference, normalize,
+                    squeeze, squeeze_bounds)
 from ..env import rng_for
 from ..geo import prop_latency_s
 from ..learners import make_learner
@@ -37,9 +38,20 @@ class Pool:
         self.w = rc["w"]
         T_win = sch.cfg["time"]["rounds"] // self.w + 2
         self.learner = make_learner(rc["learner"], self.prior, self.C, eta_scale=rc["eta_scale"],
-                                    horizon=rc["fs_horizon"], horizon_windows=T_win, k_min=rc["k_min"])
+                                    horizon=rc["fs_horizon"], horizon_windows=T_win, k_min=rc["k_min"],
+                                    mix_to_prior=rc.get("fs_mix_to_ref", False))
+        # v2 band: asymmetric θ and a minimum-share cutoff (no floor below it); original: symmetric e^±θ
+        self.v2band = rc.get("band_mode", "symmetric") == "asym_cutoff"
+        self.th_down = rc.get("theta_down", self.theta)
+        self.th_up = rc.get("theta_up", self.theta)
+        self.min_share = rc.get("min_share_cutoff", 0.0)
+        self.tiny = np.zeros(self.m, bool)
         # honest choosers keep their lists inside the band (KL projection = squeeze)
-        self.learner.proj = lambda P: kl_project(P, self.ref, self.theta)
+        if self.v2band:
+            self.learner.proj = lambda P: kl_project_bounds(P, *self.bounds(self.ref))
+            self.tiny = self.ref < self.min_share
+        else:
+            self.learner.proj = lambda P: kl_project(P, self.ref, self.theta)
         self.byz = np.zeros(self.C, bool)
         self.colluder_cols = np.flatnonzero(env.A[self.su])
         self.poison_rows = np.zeros(self.C, bool)
@@ -77,14 +89,20 @@ class Pool:
         self.pi = pi
         self.resqueeze()
 
+    def bounds(self, ref):
+        return band_bounds(ref, self.th_down, self.th_up, self.min_share)
+
+    def _squeeze(self, pi, ref):
+        return squeeze_bounds(pi, *self.bounds(ref)) if self.v2band else squeeze(pi, ref, self.theta)
+
     def resqueeze(self):
         if self.refs is not None:
-            self.sigma = np.stack([squeeze(self.pi, r, self.theta) for r in self.refs])  # (R, C, m)
+            self.sigma = np.stack([self._squeeze(self.pi, r) for r in self.refs])  # (R, C, m)
             self.sampler = StackedSampler(self.sigma.reshape(-1, self.m))
             sig_main = self.sigma[0]
             ref_main = self.refs[0]
         else:
-            self.sigma = squeeze(self.pi, self.ref, self.theta)
+            self.sigma = self._squeeze(self.pi, self.ref)
             self.sampler = StackedSampler(self.sigma)
             sig_main, ref_main = self.sigma, self.ref
         self.sig_main = sig_main
@@ -109,8 +127,10 @@ class Pool:
             self.ref = median_reference(posted)  # for reporting only
         else:
             self.ref = median_reference(posted)
-        if rc["learner"] == "strongly_adaptive":
-            self.learner.set_prior(self.ref)  # restarts begin at the current reference
+        if rc["learner"] == "strongly_adaptive" or rc.get("fs_mix_to_ref", False):
+            self.learner.set_prior(self.ref)  # SA restarts / v2 Fixed-Share mixing use the current reference
+        if self.v2band:
+            self.tiny = self.ref < self.min_share
         self.resqueeze()
 
     def sample(self, rows, u, refid=None):
@@ -216,15 +236,19 @@ class RegreTor(Scheme):
     # ------------------------------------------------------------------ guards: Tor default
     def on_round_start(self, t):
         H = self.env.H
-        if t > 0 and t % H == 0:
+        if t <= 0:
+            return
+        rp = self.rc.get("ref_period") or H  # rounds between reference refreshes (v2 default: 30 = 5 min)
+        if self.rc["reference"] == "sampled":
+            refresh = t % self.rc["w"] == 0 or t % H == 0  # every window (original behaviour)
+        else:
+            refresh = t % rp == 0
+        if refresh:
             for p in self.pools:
                 p.update_reference(self.rng_ref)
+            self._tilt_ok = False
+        if t % H == 0:
             self._log_theta_prime()
-            self._tilt_ok = False
-        elif self.rc["reference"] == "sampled" and t > 0 and t % self.rc["w"] == 0:
-            for p in self.pools:
-                p.update_reference(self.rng_ref)
-            self._tilt_ok = False
 
     def _log_theta_prime(self):
         if self.last_gl is None:
@@ -325,6 +349,9 @@ class RegreTor(Scheme):
                 np.add.at(load, p.su[keys % p.m], 1.0)
             if we and self.fb in ("real_plus_padding", "pooled"):
                 mask = (p.cnt.reshape(p.C, p.m) == 0) & elig
+                if rc.get("padding_cutoff", False) and p.tiny.any():
+                    keep = ~p.tiny[None, :] | (self.rng.random((p.C, p.m)) < rc.get("eps_resurrect", 0.05))
+                    mask &= keep
                 keys = np.flatnonzero(mask)
                 p.pending.append(("pad", keys, None))
                 npad += len(keys)
@@ -368,6 +395,9 @@ class RegreTor(Scheme):
                 r = self._readings(p, keys, obs.rho_read)
                 if kind == "probe":
                     p.psum[keys] += r * wts
+                elif self.rc.get("single_reading", False):
+                    p.rsum[keys] = r      # keep only the latest reading: one reading per successor per window
+                    p.nread[keys] = 1
                 else:
                     p.rsum[keys] += r
                     p.nread[keys] += 1
@@ -385,6 +415,12 @@ class RegreTor(Scheme):
         R = 1.0
         if self.fb == "real_plus_padding":
             lhat = avg
+            if rc.get("padding_cutoff", False):
+                # unobserved below-cutoff successors get the median reading of observed ones (neutral)
+                miss = (nread == 0) & elig
+                if miss.any():
+                    med = np.nanmedian(np.where(nread > 0, avg, np.nan), axis=1)
+                    lhat = np.where(miss, np.nan_to_num(med, nan=0.5)[:, None], avg)
         elif self.fb == "pooled":
             rep = avg.copy()
             if p.byz.any():

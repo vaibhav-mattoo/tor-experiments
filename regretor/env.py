@@ -71,7 +71,12 @@ class Env:
         self.bg_noise = ld["bg_noise"]
         cw_real = df.consweight.to_numpy(float)
         dc = cfg["directory"]
-        if dc["use_real_mismatch"] and cfg["network"]["capacity_source"] != "consensus":
+        if dc.get("mismatch_sigma") is not None:
+            # consensus = true capacity × persistent log-normal error with σ = mismatch_sigma (σ = 0: accurate)
+            z = rng_for(self.seed, "dir", 777).normal(0.0, float(dc["mismatch_sigma"]), len(self.c0))
+            cwm = self.c0 * np.exp(z)
+            self.cw0 = cwm / cwm.sum() * total_c
+        elif dc["use_real_mismatch"] and cfg["network"]["capacity_source"] != "consensus":
             self.cw0 = cw_real / cw_real.sum() * total_c
         else:
             self.cw0 = self.c0.copy()
